@@ -1,49 +1,42 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import { Button, Card, Input } from "pixel-retroui";
+import type { ChangeEventHandler, SubmitEventHandler } from "react";
+import { useCallback, useState } from "react";
 
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+  const onSubmit: SubmitEventHandler<HTMLFormElement> = useCallback(
+    (e) => {
+      e.preventDefault();
+      invoke("greet", { name }).then((value) => setGreetMsg(value as string));
+      e.currentTarget.reset();
+    },
+    [name]
+  );
+
+  const onTextChange: ChangeEventHandler<HTMLInputElement, HTMLInputElement> =
+    useCallback((e) => setName(e.currentTarget.value), []);
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+    <main className="flex h-dvh w-full items-center justify-center p-6">
+      <div>
+        <h1 className="mb-4 font-minecraft text-2xl">{greetMsg}</h1>
+        <Card className="mb-4 gap-4 p-4">
+          <form
+            className="flex flex-row items-center justify-between gap-x-4"
+            onSubmit={onSubmit}
+          >
+            <Input
+              className="flex flex-1"
+              onChange={onTextChange}
+              placeholder="Enter a name..."
+            />
+            <Button type="submit">Greet</Button>
+          </form>
+        </Card>
       </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
     </main>
   );
 }
