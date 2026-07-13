@@ -2,15 +2,16 @@
  * Single message display component.
  */
 
-import { memo, useCallback } from 'react';
-import type { UUID, ISODateString } from '@/shared/types/common';
-import type { MessageWithDetails } from '@/shared/types/message';
-import type { Attachment } from '@/shared/types/attachment';
-import type { Reaction, Mention } from '@/shared/types/message';
-import type { User } from '@/shared/types/user';
-import { Avatar } from '@/shared/components/ui/avatar';
-import { cn } from '@/utils/cn';
-import { formatMessageTime, formatRelativeTime } from '../utils/format-time';
+import { memo, useCallback } from "react";
+import type { UUID } from "@/shared/types/common";
+import type {
+  MessageWithDetails,
+  Reaction,
+  Mention,
+} from "@/shared/types/message";
+import type { Attachment } from "@/shared/types/attachment";
+import { cn } from "@/utils/cn";
+import { formatMessageTime, formatRelativeTime } from "../utils/format-time";
 
 interface MessageItemProps {
   readonly message: MessageWithDetails;
@@ -36,7 +37,7 @@ export const MessageItem = memo(function MessageItem({
   }, [onReply, message.id]);
 
   const handleDefaultReact = useCallback(() => {
-    onReact(message.id, '👍');
+    onReact(message.id, "👍");
   }, [onReact, message.id]);
 
   const handleEdit = useCallback(() => {
@@ -56,7 +57,7 @@ export const MessageItem = memo(function MessageItem({
 
   if (message.isDeleted) {
     return (
-      <div className="px-4 py-2 text-sm text-gray-400 dark:text-gray-500 italic">
+      <div className="px-4 py-2 text-sm text-retro-text-dim font-terminal italic">
         This message was deleted
       </div>
     );
@@ -65,35 +66,43 @@ export const MessageItem = memo(function MessageItem({
   return (
     <div
       className={cn(
-        'message-container group flex gap-3 px-4 py-1.5',
-        'hover:bg-gray-50 dark:hover:bg-dark-800/50',
-        isOwn && 'flex-row-reverse'
+        "message-container group flex gap-3 px-4 py-1.5",
+        "hover:bg-retro-bg-light/50",
+        isOwn && "flex-row-reverse"
       )}
     >
       {/* Avatar */}
       <div className="w-10 shrink-0">
         {showAvatar ? (
-          <Avatar
-            src={message.sender.avatarPath}
-            alt={message.sender.username}
-            size="sm"
-          />
+          <div className="flex h-9 w-9 items-center justify-center bg-retro-bg border border-retro-border font-pixel text-retro-text text-[0.55rem]">
+            {message.sender.username.slice(0, 2).toUpperCase()}
+          </div>
         ) : null}
       </div>
 
       {/* Message content */}
-      <div className={cn('flex-1 min-w-0', isOwn && 'text-right')}>
+      <div className={cn("flex-1 min-w-0", isOwn && "text-right")}>
         {/* Header with username and time */}
         {showAvatar ? (
-          <div className={cn('flex items-baseline gap-2 mb-0.5', isOwn && 'flex-row-reverse')}>
-            <span className="text-sm font-medium text-gray-900 dark:text-white">
+          <div
+            className={cn(
+              "flex items-baseline gap-2 mb-0.5",
+              isOwn && "flex-row-reverse"
+            )}
+          >
+            <span className="font-pixel text-retro-amber text-[0.6rem]">
               {message.sender.username}
             </span>
-            <span className="text-xs text-gray-500" title={formatRelativeTime(message.createdAt)}>
+            <span
+              className="text-xs text-retro-text-dim font-terminal"
+              title={formatRelativeTime(message.createdAt)}
+            >
               {formatMessageTime(message.createdAt)}
             </span>
             {message.isEdited ? (
-              <span className="text-xs text-gray-400">(edited)</span>
+              <span className="text-xs text-retro-text-dim font-terminal">
+                (edited)
+              </span>
             ) : null}
           </div>
         ) : null}
@@ -105,21 +114,31 @@ export const MessageItem = memo(function MessageItem({
 
         {/* Message text */}
         {message.content ? (
-          <div className={cn('message-content text-sm text-gray-800 dark:text-gray-200', isOwn && 'text-right')}>
-            <MessageContent content={message.content} mentions={message.mentions} />
+          <div
+            className={cn(
+              "text-sm text-retro-text font-terminal leading-relaxed",
+              isOwn && "text-right"
+            )}
+          >
+            <MessageContent
+              content={message.content}
+              mentions={message.mentions}
+            />
           </div>
         ) : null}
 
         {/* Attachments */}
         {message.attachments.length > 0 ? (
-          <div className="mt-2">
+          <div className={cn("mt-2", isOwn && "text-right")}>
             <AttachmentList attachments={message.attachments} />
           </div>
         ) : null}
 
         {/* Reactions */}
         {message.reactions.length > 0 ? (
-          <div className={cn('mt-1 flex flex-wrap gap-1', isOwn && 'justify-end')}>
+          <div
+            className={cn("mt-1 flex flex-wrap gap-1", isOwn && "justify-end")}
+          >
             <ReactionList
               reactions={message.reactions}
               onReact={handleReaction}
@@ -129,7 +148,12 @@ export const MessageItem = memo(function MessageItem({
       </div>
 
       {/* Actions */}
-      <div className={cn('message-actions flex items-start gap-1', isOwn && 'order-first')}>
+      <div
+        className={cn(
+          "message-actions flex items-start gap-1",
+          isOwn && "order-first"
+        )}
+      >
         <ActionButton title="Reply" onClick={handleReply}>
           ↩
         </ActionButton>
@@ -165,7 +189,7 @@ function ActionButton({
       type="button"
       title={title}
       onClick={onClick}
-      className="p-1 text-xs rounded hover:bg-gray-200 dark:hover:bg-dark-600 transition-colors"
+      className="p-1 text-xs border border-transparent hover:border-retro-border hover:bg-retro-bg transition-colors text-retro-text-dim"
     >
       {children}
     </button>
@@ -183,13 +207,12 @@ function ReplyPreview({ message, isOwn }: ReplyPreviewProps) {
   return (
     <div
       className={cn(
-        'mb-1 px-2 py-1 rounded border-l-2 border-blue-400',
-        'bg-gray-100 dark:bg-dark-700',
-        isOwn && 'text-right'
+        "mb-1 px-2 py-1 border-l-2 border-retro-amber bg-retro-bg",
+        isOwn && "text-right border-l-0 border-r-2"
       )}
     >
-      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-        {message.content ?? 'Attachment'}
+      <p className="text-xs text-retro-text-dim font-terminal truncate">
+        {message.content ?? "Attachment"}
       </p>
     </div>
   );
@@ -204,12 +227,18 @@ function MessageContent({ content, mentions }: MessageContentProps) {
   let processedContent = content;
   for (const mention of mentions) {
     processedContent = processedContent.replace(
-      new RegExp(`@${mention.username}`, 'g'),
-      `<span class="text-blue-500 font-medium">@${mention.username}</span>`
+      new RegExp(`@${mention.username}`, "g"),
+      `<span class="text-retro-cyan font-bold">@${mention.username}</span>`
     );
   }
 
-  return <span dangerouslySetInnerHTML={{ __html: processedContent }} />;
+  return (
+    <span
+      dangerouslySetInnerHTML={{
+        __html: processedContent.replace(/\n/g, "<br/>"),
+      }}
+    />
+  );
 }
 
 interface AttachmentListProps {
@@ -218,13 +247,13 @@ interface AttachmentListProps {
 
 function AttachmentList({ attachments }: AttachmentListProps) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="inline-flex flex-wrap gap-2">
       {attachments.map((attachment) => (
         <div
           key={attachment.id}
-          className="px-3 py-2 rounded-lg bg-gray-100 dark:bg-dark-700 text-sm"
+          className="retro-chip border-retro-border-light text-retro-text"
         >
-          {attachment.isImage ? '🖼️' : '📎'} {attachment.originalFilename}
+          {attachment.isImage ? "🖼️" : "📎"} {attachment.originalFilename}
         </div>
       ))}
     </div>
@@ -237,7 +266,6 @@ interface ReactionListProps {
 }
 
 function ReactionList({ reactions, onReact }: ReactionListProps) {
-  // Group reactions by emoji
   const grouped: Record<string, number> = {};
   for (const reaction of reactions) {
     grouped[reaction.emoji] = (grouped[reaction.emoji] ?? 0) + 1;
@@ -250,28 +278,11 @@ function ReactionList({ reactions, onReact }: ReactionListProps) {
           key={emoji}
           type="button"
           onClick={() => onReact(emoji)}
-          className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-dark-700 text-xs hover:bg-gray-200 dark:hover:bg-dark-600"
+          className="retro-reaction hover:border-retro-amber"
         >
           {emoji} {count}
         </button>
       ))}
     </>
   );
-}
-
-// Re-export types needed by MessageWithDetails for external use
-export interface MessageWithDetailsType {
-  readonly id: UUID;
-  readonly senderId: UUID;
-  readonly content: string | null;
-  readonly replyToId: UUID | null;
-  readonly isEdited: boolean;
-  readonly isDeleted: boolean;
-  readonly createdAt: ISODateString;
-  readonly updatedAt: ISODateString;
-  readonly sender: User;
-  readonly replyTo: { readonly content: string | null } | null;
-  readonly attachments: readonly Attachment[];
-  readonly reactions: readonly Reaction[];
-  readonly mentions: readonly Mention[];
 }

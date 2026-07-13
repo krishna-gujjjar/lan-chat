@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "zenpaws",
+  "productName": "Lan Chat",
   "version": "0.1.0",
-  "identifier": "com.krishna.zenpaws",
+  "identifier": "com.krishna.lanchat",
   "build": {
     "beforeDevCommand": "bun --bun run dev",
     "devUrl": "http://localhost:5173",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "zenpaws",
+        "title": "Lan Chat",
         "width": 1200,
         "height": 800,
         "minWidth": 800,

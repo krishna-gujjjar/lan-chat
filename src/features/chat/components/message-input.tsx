@@ -2,6 +2,7 @@
  * Message input component with attachment support.
  */
 
+import { open } from "@tauri-apps/plugin-dialog";
 import {
   type KeyboardEvent,
   useCallback,
@@ -9,15 +10,18 @@ import {
   useRef,
   useState,
 } from "react";
-import { Button } from "@/shared/components/ui/button";
 import { useMessageStore } from "@/shared/stores/message-store";
 import type { UUID } from "@/shared/types/common";
 import { cn } from "@/utils/cn";
 
 interface MessageInputProps {
   readonly disabled?: boolean;
-  readonly onAttach: () => void;
-  readonly onSend: (content: string, replyToId?: UUID) => void;
+  readonly onAttach: (filePaths: string[]) => Promise<UUID[]>;
+  readonly onSend: (
+    content: string,
+    replyToId?: UUID,
+    attachmentIds?: UUID[]
+  ) => void;
   readonly onTyping: (isTyping: boolean) => void;
 }
 
@@ -28,6 +32,8 @@ export function MessageInput({
   disabled = false,
 }: MessageInputProps) {
   const [content, setContent] = useState("");
+  const [attachments, setAttachments] = useState<UUID[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -35,7 +41,6 @@ export function MessageInput({
   const messages = useMessageStore((state) => state.messages);
   const setReplyTo = useMessageStore((state) => state.setReplyTo);
 
-  // Derive reply message from stable state
   const replyToMessage = useMemo(() => {
     if (!replyToId) {
       return null;
@@ -46,8 +51,6 @@ export function MessageInput({
   const handleInput = useCallback(
     (value: string) => {
       setContent(value);
-
-      // Handle typing indicator
       onTyping(true);
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
@@ -68,23 +71,33 @@ export function MessageInput({
 
   const handleSend = useCallback(() => {
     const trimmed = content.trim();
-    if (!trimmed || disabled) {
+    if ((!trimmed && attachments.length === 0) || disabled) {
       return;
     }
 
-    onSend(trimmed, replyToMessage?.id);
+    onSend(
+      trimmed,
+      replyToMessage?.id,
+      attachments.length > 0 ? attachments : undefined
+    );
     setContent("");
+    setAttachments([]);
     setReplyTo(null);
 
-    // Clear typing indicator
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
     onTyping(false);
-
-    // Focus back to textarea
     textareaRef.current?.focus();
-  }, [content, disabled, onSend, onTyping, replyToMessage, setReplyTo]);
+  }, [
+    content,
+    attachments,
+    disabled,
+    onSend,
+    onTyping,
+    replyToMessage,
+    setReplyTo,
+  ]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -96,33 +109,84 @@ export function MessageInput({
     [handleSend]
   );
 
+  const handleAttach = useCallback(async () => {
+    try {
+      const selected = await open({
+        filters: [
+          { extensions: ["png", "jpg", "jpeg", "gif", "webp"], name: "Images" },
+          { extensions: ["mp4", "webm"], name: "Videos" },
+          {
+            extensions: ["pdf", "doc", "docx", "txt", "csv"],
+            name: "Documents",
+          },
+          { extensions: ["*"], name: "All Files" },
+        ],
+        multiple: true,
+      });
+
+      if (selected && Array.isArray(selected) && selected.length > 0) {
+        setIsUploading(true);
+        const ids = await onAttach(selected);
+        setAttachments((prev) => [...prev, ...ids]);
+        setIsUploading(false);
+      }
+    } catch (e) {
+      console.error("File picker error:", e);
+      setIsUploading(false);
+    }
+  }, [onAttach]);
+
   const cancelReply = useCallback(() => {
     setReplyTo(null);
   }, [setReplyTo]);
 
+  const removeAttachment = useCallback((id: UUID) => {
+    setAttachments((prev) => prev.filter((a) => a !== id));
+  }, []);
+
   return (
-    <div className="border-gray-200 border-t p-4 dark:border-dark-600">
+    <div className="border-retro-border border-t-2 bg-retro-bg-light p-4">
       {/* Reply preview */}
       {replyToMessage ? (
-        <div className="mb-2 flex items-center gap-2 rounded-lg bg-gray-100 px-3 py-2 dark:bg-dark-700">
+        <div className="mb-3 flex items-center gap-2 border border-retro-border bg-retro-bg px-3 py-2">
           <div className="min-w-0 flex-1">
-            <p className="text-gray-500 text-xs dark:text-gray-400">
+            <p className="font-terminal text-retro-text-dim text-xs">
               Replying to{" "}
-              <span className="font-medium">
+              <span className="text-retro-amber">
                 {replyToMessage.sender.username}
               </span>
             </p>
-            <p className="truncate text-gray-700 text-sm dark:text-gray-300">
+            <p className="truncate font-terminal text-retro-text text-sm">
               {replyToMessage.content ?? "Attachment"}
             </p>
           </div>
           <button
-            className="p-1 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+            className="p-1 font-pixel text-retro-text-dim text-xs hover:text-retro-red"
             onClick={cancelReply}
             type="button"
           >
-            ✕
+            [X]
           </button>
+        </div>
+      ) : null}
+
+      {/* Attachment preview */}
+      {attachments.length > 0 ? (
+        <div className="mb-3 flex flex-wrap gap-2">
+          {attachments.map((id) => (
+            <div
+              className="retro-chip border-retro-green-dim text-retro-green"
+              key={id}
+            >
+              <span>FILE</span>
+              <button
+                className="ml-1 text-retro-text-dim hover:text-retro-red"
+                onClick={() => removeAttachment(id)}
+              >
+                ×
+              </button>
+            </div>
+          ))}
         </div>
       ) : null}
 
@@ -130,30 +194,20 @@ export function MessageInput({
       <div className="flex items-end gap-2">
         <button
           className={cn(
-            "rounded-lg p-2 text-gray-500 hover:text-gray-700",
-            "hover:bg-gray-100 dark:hover:bg-dark-700",
-            "transition-colors disabled:opacity-50"
+            "retro-button h-10 w-10 p-0",
+            isUploading && "animate-blink"
           )}
-          disabled={disabled}
-          onClick={onAttach}
+          disabled={disabled || isUploading}
+          onClick={handleAttach}
           title="Attach file"
           type="button"
         >
-          📎
+          {isUploading ? "..." : "+"}
         </button>
 
         <div className="relative flex-1">
           <textarea
-            className={cn(
-              "w-full resize-none rounded-lg border px-4 py-2.5",
-              "bg-white dark:bg-dark-800",
-              "border-gray-300 dark:border-dark-500",
-              "text-gray-900 dark:text-gray-100",
-              "placeholder:text-gray-500 dark:placeholder:text-gray-400",
-              "focus:outline-none focus:ring-2 focus:ring-blue-500",
-              "disabled:cursor-not-allowed disabled:opacity-50",
-              "max-h-32 overflow-y-auto"
-            )}
+            className="retro-input min-h-[44px] resize-none"
             disabled={disabled}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
@@ -168,18 +222,18 @@ export function MessageInput({
           />
         </div>
 
-        <Button
-          disabled={disabled || !content.trim()}
+        <button
+          className="retro-button retro-button-primary h-10"
+          disabled={disabled || (!content.trim() && attachments.length === 0)}
           onClick={handleSend}
-          size="md"
         >
-          Send
-        </Button>
+          SEND
+        </button>
       </div>
 
       {/* Hint */}
-      <p className="mt-2 text-gray-500 text-xs dark:text-gray-400">
-        Press Enter to send, Shift+Enter for new line
+      <p className="mt-2 font-terminal text-retro-text-dim text-xs">
+        ENTER to send | SHIFT+ENTER for new line
       </p>
     </div>
   );

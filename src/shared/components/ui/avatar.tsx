@@ -82,7 +82,6 @@ export function Avatar({
         />
       ) : (
         <div
-          aria-label={alt}
           className={cn(
             "flex items-center justify-center rounded-full font-medium text-white",
             sizeStyles[size],

@@ -2,7 +2,7 @@
  * Button component with variants.
  */
 
-import type { ButtonHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, RefObject } from "react";
 import { cn } from "@/utils/cn";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
@@ -72,6 +72,7 @@ function LoadingSpinner({ size }: { readonly size: ButtonSize }) {
       viewBox="0 0 24 24"
       xmlns="http://www.w3.org/2000/svg"
     >
+      <title>Spinner</title>
       <circle
         className="opacity-25"
         cx="12"

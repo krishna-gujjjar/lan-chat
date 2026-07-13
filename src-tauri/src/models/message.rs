@@ -57,7 +57,7 @@ impl Message {
 }
 
 /// Message with all related data for display.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageWithDetails {
     #[serde(flatten)]

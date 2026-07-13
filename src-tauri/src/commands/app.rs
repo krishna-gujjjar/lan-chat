@@ -34,6 +34,15 @@ pub async fn initialize_app(
     // Cache the user
     let mut current = state.current_user.write().await;
     *current = Some(user.clone());
+    drop(current);
+
+    // Start discovery service
+    let state_arc = state.inner().clone();
+    tokio::spawn(async move {
+        if let Err(e) = crate::network::discovery::start_discovery_service(state_arc).await {
+            tracing::error!("Failed to start discovery after init: {}", e);
+        }
+    });
 
     tracing::info!("Application initialized for user: {}", user.username);
 
@@ -42,8 +51,6 @@ pub async fn initialize_app(
 
 /// Get the application data directory path.
 #[tauri::command]
-pub async fn get_app_data_dir(
-    state: State<'_, Arc<AppState>>,
-) -> Result<String, String> {
+pub async fn get_app_data_dir(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     Ok(state.app_data_dir.to_string_lossy().to_string())
 }

@@ -3,8 +3,8 @@
 use crate::database::Database;
 use crate::errors::{AppError, AppResult};
 use crate::models::{
-    Attachment, CreateMessageInput, Mention, Message, MessageSearchParams,
-    MessageStatus, MessageWithDetails, PaginatedMessages, Reaction, ReadReceipt, User,
+    Attachment, CreateMessageInput, Mention, Message, MessageSearchParams, MessageStatus,
+    MessageWithDetails, PaginatedMessages, Reaction, ReadReceipt, User,
 };
 use chrono::Utc;
 use sqlx::Row;
@@ -52,6 +52,17 @@ impl MessageService {
         if let Some(mention_ids) = input.mentioned_user_ids {
             for user_id in mention_ids {
                 self.add_mention(message.id, user_id).await?;
+            }
+        }
+
+        // Link attachments to this message
+        if let Some(attachment_ids) = input.attachment_ids {
+            for att_id in attachment_ids {
+                sqlx::query("UPDATE attachments SET message_id = ? WHERE id = ?")
+                    .bind(message.id.to_string())
+                    .bind(att_id.to_string())
+                    .execute(self.database.pool())
+                    .await?;
             }
         }
 
@@ -198,7 +209,10 @@ impl MessageService {
     }
 
     /// Search messages.
-    pub async fn search_messages(&self, params: MessageSearchParams) -> AppResult<PaginatedMessages> {
+    pub async fn search_messages(
+        &self,
+        params: MessageSearchParams,
+    ) -> AppResult<PaginatedMessages> {
         let limit = params.limit.unwrap_or(50);
         let offset = params.offset.unwrap_or(0);
         let search_pattern = format!("%{}%", params.query);

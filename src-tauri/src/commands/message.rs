@@ -6,6 +6,7 @@ use crate::models::{
 use crate::services::MessageService;
 use crate::state::AppState;
 use std::sync::Arc;
+use tauri::Emitter;
 use tauri::State;
 use uuid::Uuid;
 
@@ -16,14 +17,11 @@ pub async fn send_message(
     input: CreateMessageInput,
 ) -> Result<MessageWithDetails, String> {
     let current_user = state.current_user.read().await;
-    let sender_id = current_user
-        .as_ref()
-        .ok_or("No current user")?
-        .id;
+    let sender_id = current_user.as_ref().ok_or("No current user")?.id;
     drop(current_user);
 
     let service = MessageService::new(state.database.clone());
-    
+
     let message = service
         .create_message(sender_id, input)
         .await
@@ -35,11 +33,25 @@ pub async fn send_message(
         .await
         .map_err(|e| e.to_string())?;
 
-    messages
+    let msg_with_details = messages
         .items
         .into_iter()
         .find(|m| m.message.id == message.id)
-        .ok_or_else(|| "Failed to retrieve created message".to_string())
+        .ok_or_else(|| "Failed to retrieve created message".to_string())?;
+
+    // Broadcast to peers
+    let state_arc = state.inner().clone();
+    let broadcast_msg = msg_with_details.clone();
+    tokio::spawn(async move {
+        let _ = crate::network::peer_connection::broadcast_message(state_arc, &broadcast_msg).await;
+    });
+
+    // Emit to frontend
+    if let Some(app_handle) = state.app_handle.read().await.as_ref() {
+        let _ = app_handle.emit("message:created", msg_with_details.clone());
+    }
+
+    Ok(msg_with_details)
 }
 
 /// Edit an existing message.
@@ -50,9 +62,9 @@ pub async fn edit_message(
     content: String,
 ) -> Result<MessageWithDetails, String> {
     let id = Uuid::parse_str(&message_id).map_err(|e| e.to_string())?;
-    
+
     let service = MessageService::new(state.database.clone());
-    
+
     let message = service
         .update_message(id, content)
         .await
@@ -64,11 +76,18 @@ pub async fn edit_message(
         .await
         .map_err(|e| e.to_string())?;
 
-    messages
+    let msg_with_details = messages
         .items
         .into_iter()
         .find(|m| m.message.id == message.id)
-        .ok_or_else(|| "Failed to retrieve updated message".to_string())
+        .ok_or_else(|| "Failed to retrieve updated message".to_string())?;
+
+    // Emit to frontend
+    if let Some(app_handle) = state.app_handle.read().await.as_ref() {
+        let _ = app_handle.emit("message:updated", msg_with_details.clone());
+    }
+
+    Ok(msg_with_details)
 }
 
 /// Delete a message.
@@ -78,13 +97,23 @@ pub async fn delete_message(
     message_id: String,
 ) -> Result<(), String> {
     let id = Uuid::parse_str(&message_id).map_err(|e| e.to_string())?;
-    
+
     let service = MessageService::new(state.database.clone());
-    
+
     service
         .delete_message(id)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Emit to frontend
+    if let Some(app_handle) = state.app_handle.read().await.as_ref() {
+        let _ = app_handle.emit(
+            "message:deleted",
+            serde_json::json!({"messageId": message_id}),
+        );
+    }
+
+    Ok(())
 }
 
 /// Get messages with pagination.
@@ -98,9 +127,9 @@ pub async fn get_messages(
         .map(|s| Uuid::parse_str(&s))
         .transpose()
         .map_err(|e| e.to_string())?;
-    
+
     let service = MessageService::new(state.database.clone());
-    
+
     service
         .get_messages(limit, before_id)
         .await
@@ -114,7 +143,7 @@ pub async fn search_messages(
     params: MessageSearchParams,
 ) -> Result<PaginatedMessages, String> {
     let service = MessageService::new(state.database.clone());
-    
+
     service
         .search_messages(params)
         .await
@@ -129,10 +158,10 @@ pub async fn add_reaction(
     emoji: String,
 ) -> Result<Reaction, String> {
     let msg_id = Uuid::parse_str(&message_id).map_err(|e| e.to_string())?;
-    
+
     let current_user = state.current_user.read().await;
     let user = current_user.as_ref().ok_or("No current user")?;
-    
+
     let reaction = Reaction::new(msg_id, user.id, user.username.clone(), emoji);
 
     // Insert into database
@@ -152,6 +181,11 @@ pub async fn add_reaction(
     .await
     .map_err(|e| e.to_string())?;
 
+    // Emit to frontend
+    if let Some(app_handle) = state.app_handle.read().await.as_ref() {
+        let _ = app_handle.emit("reaction:added", reaction.clone());
+    }
+
     Ok(reaction)
 }
 
@@ -168,6 +202,14 @@ pub async fn remove_reaction(
         .execute(state.database.pool())
         .await
         .map_err(|e| e.to_string())?;
+
+    // Emit to frontend
+    if let Some(app_handle) = state.app_handle.read().await.as_ref() {
+        let _ = app_handle.emit(
+            "reaction:removed",
+            serde_json::json!({"reactionId": reaction_id}),
+        );
+    }
 
     Ok(())
 }
