@@ -1,14 +1,83 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
+//! LAN Chat application library.
+//!
+//! This module contains the core application logic and Tauri setup.
 
+pub mod commands;
+pub mod database;
+pub mod errors;
+pub mod models;
+pub mod services;
+pub mod state;
+
+use state::AppState;
+use std::sync::Arc;
+use tauri::Manager;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+/// Initialize and run the Tauri application.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Initialize logging
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "lan_chat=debug,tauri=info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    tracing::info!("Starting LAN Chat application");
+
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet])
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_notification::init())
+        .setup(|app| {
+            let handle = app.handle().clone();
+            
+            // Initialize application state
+            tauri::async_runtime::block_on(async {
+                let state = AppState::new(&handle).await
+                    .expect("Failed to initialize application state");
+                app.manage(Arc::new(state));
+            });
+
+            tracing::info!("Application setup complete");
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            // User commands
+            commands::user::get_current_user,
+            commands::user::update_user,
+            commands::user::set_avatar,
+            commands::user::get_all_users,
+            // Message commands
+            commands::message::send_message,
+            commands::message::edit_message,
+            commands::message::delete_message,
+            commands::message::get_messages,
+            commands::message::search_messages,
+            commands::message::add_reaction,
+            commands::message::remove_reaction,
+            // Attachment commands
+            commands::attachment::upload_files,
+            commands::attachment::start_download,
+            commands::attachment::pause_download,
+            commands::attachment::cancel_download,
+            commands::attachment::get_download_progress,
+            // Settings commands
+            commands::settings::get_settings,
+            commands::settings::update_settings,
+            // Network commands
+            commands::network::get_peers,
+            commands::network::start_discovery,
+            commands::network::stop_discovery,
+            // App commands
+            commands::app::initialize_app,
+            commands::app::get_app_data_dir,
+        ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .expect("Error while running tauri application");
 }

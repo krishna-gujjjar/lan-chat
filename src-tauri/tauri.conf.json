@@ -12,13 +12,22 @@
   "app": {
     "windows": [
       {
-        "title": "zenpaws",
-        "width": 800,
-        "height": 600
+        "title": "LAN Chat",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true
       }
     ],
     "security": {
       "csp": null
+    },
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": true
     }
   },
   "bundle": {
@@ -31,5 +40,20 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "shell": {
+      "open": true
+    },
+    "fs": {
+      "scope": {
+        "allow": [
+          "$DOCUMENT/**",
+          "$DOWNLOAD/**",
+          "$APPDATA/**"
+        ],
+        "deny": []
+      }
+    }
   }
 }

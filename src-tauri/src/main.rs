@@ -1,6 +1,10 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
+//! Application entry point.
+//! 
+//! This is the main entry point for the desktop application.
+//! It initializes the Tauri runtime and starts the application.
+
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    zenpaws_lib::run()
+    lan_chat_lib::run();
 }
