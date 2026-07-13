@@ -17,5 +17,3 @@ export function AppProviders({ children }: AppProvidersProps) {
     </QueryProvider>
   );
 }
-
-export { useTheme } from "./theme-provider";

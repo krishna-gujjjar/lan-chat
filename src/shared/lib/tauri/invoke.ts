@@ -5,23 +5,20 @@
 
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import type {
-  AppSettings,
   Attachment,
-  CreateMessageInput,
   Download,
   DownloadProgress,
+} from "@/shared/types/attachment";
+import type { PaginatedResponse, Result, UUID } from "@/shared/types/common";
+import type {
+  CreateMessageInput,
   MessageSearchParams,
   MessageWithDetails,
-  NetworkStats,
-  PaginatedResponse,
-  Peer,
   Reaction,
-  Result,
-  UpdateSettingsInput,
-  UpdateUserInput,
-  User,
-  UUID,
-} from "@/shared/types";
+} from "@/shared/types/message";
+import type { NetworkStats, Peer } from "@/shared/types/network";
+import type { AppSettings, UpdateSettingsInput } from "@/shared/types/settings";
+import type { UpdateUserInput, User } from "@/shared/types/user";
 
 /**
  * Command definitions mapping command names to their input/output types.
@@ -31,25 +28,25 @@ interface TauriCommands {
     input: { messageId: UUID; emoji: string };
     output: Reaction;
   };
-  cancel_download: { input: { downloadId: UUID }; output: void };
-  close_window: { input: void; output: void };
+  cancel_download: { input: { downloadId: UUID }; output: undefined };
+  close_window: { input: undefined; output: undefined };
   connect_to_peer: { input: { address: string; port: number }; output: Peer };
-  copy_image: { input: { path: string }; output: void };
+  copy_image: { input: { path: string }; output: undefined };
 
   // Clipboard commands
-  copy_text: { input: { text: string }; output: void };
-  delete_message: { input: { messageId: UUID }; output: void };
-  disconnect_peer: { input: { peerId: UUID }; output: void };
+  copy_text: { input: { text: string }; output: undefined };
+  delete_message: { input: { messageId: UUID }; output: undefined };
+  disconnect_peer: { input: { peerId: UUID }; output: undefined };
   edit_message: {
     input: { messageId: UUID; content: string };
     output: MessageWithDetails;
   };
-  get_all_users: { input: void; output: readonly User[] };
-  get_app_data_dir: { input: void; output: string };
+  get_all_users: { input: undefined; output: readonly User[] };
+  get_app_data_dir: { input: undefined; output: string };
   get_attachment: { input: { attachmentId: UUID }; output: Attachment };
   // User commands
-  get_current_user: { input: void; output: User };
-  get_download_location: { input: void; output: string };
+  get_current_user: { input: undefined; output: User };
+  get_download_location: { input: undefined; output: string };
   get_download_progress: {
     input: { downloadId: UUID };
     output: DownloadProgress;
@@ -58,31 +55,31 @@ interface TauriCommands {
     input: { limit: number; before?: UUID };
     output: PaginatedResponse<MessageWithDetails>;
   };
-  get_network_stats: { input: void; output: NetworkStats };
+  get_network_stats: { input: undefined; output: NetworkStats };
 
   // Network commands
-  get_peers: { input: void; output: readonly Peer[] };
+  get_peers: { input: undefined; output: readonly Peer[] };
 
   // Settings commands
-  get_settings: { input: void; output: AppSettings };
+  get_settings: { input: undefined; output: AppSettings };
   get_user: { input: { userId: UUID }; output: User | null };
-  has_image_in_clipboard: { input: void; output: boolean };
+  has_image_in_clipboard: { input: undefined; output: boolean };
 
   // App lifecycle
   initialize_app: { input: { username: string }; output: User };
-  maximize_window: { input: void; output: void };
+  maximize_window: { input: undefined; output: undefined };
 
   // Window commands
-  minimize_window: { input: void; output: void };
-  open_file: { input: { path: string }; output: void };
+  minimize_window: { input: undefined; output: undefined };
+  open_file: { input: { path: string }; output: undefined };
   paste_image: {
     input: { messageId?: UUID };
     output: Attachment;
   };
-  paste_text: { input: void; output: string | null };
+  paste_text: { input: undefined; output: string | null };
   pause_download: { input: { downloadId: UUID }; output: Download };
-  pick_download_folder: { input: void; output: string | null };
-  remove_reaction: { input: { reactionId: UUID }; output: void };
+  pick_download_folder: { input: undefined; output: string | null };
+  remove_reaction: { input: { reactionId: UUID }; output: undefined };
   resume_download: { input: { downloadId: UUID }; output: Download };
   save_file_as: {
     input: { attachmentId: UUID; destinationPath: string };
@@ -96,17 +93,17 @@ interface TauriCommands {
   // Message commands
   send_message: { input: CreateMessageInput; output: MessageWithDetails };
   set_avatar: { input: { filePath: string }; output: User };
-  set_download_location: { input: { path: string }; output: void };
-  show_in_tray: { input: void; output: void };
+  set_download_location: { input: { path: string }; output: undefined };
+  show_in_tray: { input: undefined; output: undefined };
 
   // Notification commands
   show_notification: {
     input: { title: string; body: string };
-    output: void;
+    output: undefined;
   };
-  start_discovery: { input: void; output: void };
+  start_discovery: { input: undefined; output: undefined };
   start_download: { input: { attachmentId: UUID }; output: Download };
-  stop_discovery: { input: void; output: void };
+  stop_discovery: { input: undefined; output: undefined };
   update_settings: { input: UpdateSettingsInput; output: AppSettings };
   update_user: { input: UpdateUserInput; output: User };
 

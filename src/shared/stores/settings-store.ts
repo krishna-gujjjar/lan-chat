@@ -5,8 +5,9 @@
 
 import { create } from "zustand";
 import { devtools, persist } from "zustand/middleware";
-import type { AppSettings, FontSize, ThemeMode } from "@/shared/types";
-import { DEFAULT_SETTINGS } from "@/shared/types";
+import type { ThemeMode } from "@/shared/types/common";
+import type { AppSettings, FontSize } from "@/shared/types/settings";
+import { DEFAULT_SETTINGS } from "@/shared/types/settings";
 
 interface SettingsState {
   /** Loading state */

@@ -3,8 +3,8 @@
  */
 
 import { createContext, type ReactNode, useContext, useEffect } from "react";
-import { selectTheme, useSettingsStore } from "@/shared/stores";
-import type { ThemeMode } from "@/shared/types";
+import { selectTheme, useSettingsStore } from "@/shared/stores/settings-store";
+import type { ThemeMode } from "@/shared/types/common";
 
 interface ThemeContextValue {
   readonly resolvedTheme: "light" | "dark";

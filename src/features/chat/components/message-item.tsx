@@ -2,9 +2,16 @@
  * Single message display component.
  */
 
-import { memo } from "react";
-import { Avatar } from "@/shared/components/ui";
-import type { MessageWithDetails, UUID } from "@/shared/types";
+import { memo, useCallback } from "react";
+import { Avatar } from "@/shared/components/ui/avatar";
+import type { Attachment } from "@/shared/types/attachment";
+import type { ISODateString, UUID } from "@/shared/types/common";
+import type {
+  Mention,
+  MessageWithDetails,
+  Reaction,
+} from "@/shared/types/message";
+import type { User } from "@/shared/types/user";
 import { cn } from "@/utils/cn";
 import { formatMessageTime, formatRelativeTime } from "../utils/format-time";
 
@@ -27,6 +34,29 @@ export const MessageItem = memo(function MessageItem({
   onDelete,
   onReact,
 }: MessageItemProps) {
+  const handleReply = useCallback(() => {
+    onReply(message.id);
+  }, [onReply, message.id]);
+
+  const handleDefaultReact = useCallback(() => {
+    onReact(message.id, "👍");
+  }, [onReact, message.id]);
+
+  const handleEdit = useCallback(() => {
+    onEdit(message.id);
+  }, [onEdit, message.id]);
+
+  const handleDelete = useCallback(() => {
+    onDelete(message.id);
+  }, [onDelete, message.id]);
+
+  const handleReaction = useCallback(
+    (emoji: string) => {
+      onReact(message.id, emoji);
+    },
+    [onReact, message.id]
+  );
+
   if (message.isDeleted) {
     return (
       <div className="px-4 py-2 text-gray-400 text-sm italic dark:text-gray-500">
@@ -45,19 +75,19 @@ export const MessageItem = memo(function MessageItem({
     >
       {/* Avatar */}
       <div className="w-10 shrink-0">
-        {showAvatar && (
+        {showAvatar ? (
           <Avatar
             alt={message.sender.username}
             size="sm"
             src={message.sender.avatarPath}
           />
-        )}
+        ) : null}
       </div>
 
       {/* Message content */}
       <div className={cn("min-w-0 flex-1", isOwn && "text-right")}>
         {/* Header with username and time */}
-        {showAvatar && (
+        {showAvatar ? (
           <div
             className={cn(
               "mb-0.5 flex items-baseline gap-2",
@@ -73,19 +103,19 @@ export const MessageItem = memo(function MessageItem({
             >
               {formatMessageTime(message.createdAt)}
             </span>
-            {message.isEdited && (
+            {message.isEdited ? (
               <span className="text-gray-400 text-xs">(edited)</span>
-            )}
+            ) : null}
           </div>
-        )}
+        ) : null}
 
         {/* Reply preview */}
-        {message.replyTo && (
+        {message.replyTo ? (
           <ReplyPreview isOwn={isOwn} message={message.replyTo} />
-        )}
+        ) : null}
 
         {/* Message text */}
-        {message.content && (
+        {message.content ? (
           <div
             className={cn(
               "message-content text-gray-800 text-sm dark:text-gray-200",
@@ -97,26 +127,26 @@ export const MessageItem = memo(function MessageItem({
               mentions={message.mentions}
             />
           </div>
-        )}
+        ) : null}
 
         {/* Attachments */}
-        {message.attachments.length > 0 && (
+        {message.attachments.length > 0 ? (
           <div className="mt-2">
             <AttachmentList attachments={message.attachments} />
           </div>
-        )}
+        ) : null}
 
         {/* Reactions */}
-        {message.reactions.length > 0 && (
+        {message.reactions.length > 0 ? (
           <div
             className={cn("mt-1 flex flex-wrap gap-1", isOwn && "justify-end")}
           >
             <ReactionList
-              onReact={(emoji) => onReact(message.id, emoji)}
+              onReact={handleReaction}
               reactions={message.reactions}
             />
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Actions */}
@@ -126,22 +156,22 @@ export const MessageItem = memo(function MessageItem({
           isOwn && "order-first"
         )}
       >
-        <ActionButton onClick={() => onReply(message.id)} title="Reply">
+        <ActionButton onClick={handleReply} title="Reply">
           ↩
         </ActionButton>
-        <ActionButton onClick={() => onReact(message.id, "👍")} title="React">
+        <ActionButton onClick={handleDefaultReact} title="React">
           😊
         </ActionButton>
-        {isOwn && (
+        {isOwn ? (
           <>
-            <ActionButton onClick={() => onEdit(message.id)} title="Edit">
+            <ActionButton onClick={handleEdit} title="Edit">
               ✏️
             </ActionButton>
-            <ActionButton onClick={() => onDelete(message.id)} title="Delete">
+            <ActionButton onClick={handleDelete} title="Delete">
               🗑️
             </ActionButton>
           </>
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -161,23 +191,21 @@ function ActionButton({
       className="rounded p-1 text-xs transition-colors hover:bg-gray-200 dark:hover:bg-dark-600"
       onClick={onClick}
       title={title}
+      type="button"
     >
       {children}
     </button>
   );
 }
 
-function ReplyPreview({
-  message,
-  isOwn,
-}: {
-  readonly message: MessageWithDetails["replyTo"];
+interface ReplyPreviewProps {
   readonly isOwn: boolean;
-}) {
-  if (!message) {
-    return null;
-  }
+  readonly message: {
+    readonly content: string | null;
+  };
+}
 
+function ReplyPreview({ message, isOwn }: ReplyPreviewProps) {
   return (
     <div
       className={cn(
@@ -193,30 +221,28 @@ function ReplyPreview({
   );
 }
 
-function MessageContent({
-  content,
-  mentions,
-}: {
+interface MessageContentProps {
   readonly content: string;
-  readonly mentions: MessageWithDetails["mentions"];
-}) {
-  // Simple mention highlighting
+  readonly mentions: readonly Mention[];
+}
+
+function MessageContent({ content, mentions }: MessageContentProps) {
   let processedContent = content;
-  mentions.forEach((mention) => {
+  for (const mention of mentions) {
     processedContent = processedContent.replace(
       new RegExp(`@${mention.username}`, "g"),
       `<span class="text-blue-500 font-medium">@${mention.username}</span>`
     );
-  });
+  }
 
   return <span dangerouslySetInnerHTML={{ __html: processedContent }} />;
 }
 
-function AttachmentList({
-  attachments,
-}: {
-  readonly attachments: MessageWithDetails["attachments"];
-}) {
+interface AttachmentListProps {
+  readonly attachments: readonly Attachment[];
+}
+
+function AttachmentList({ attachments }: AttachmentListProps) {
   return (
     <div className="flex flex-wrap gap-2">
       {attachments.map((attachment) => (
@@ -231,21 +257,17 @@ function AttachmentList({
   );
 }
 
-function ReactionList({
-  reactions,
-  onReact,
-}: {
-  readonly reactions: MessageWithDetails["reactions"];
+interface ReactionListProps {
   readonly onReact: (emoji: string) => void;
-}) {
+  readonly reactions: readonly Reaction[];
+}
+
+function ReactionList({ reactions, onReact }: ReactionListProps) {
   // Group reactions by emoji
-  const grouped = reactions.reduce(
-    (acc, reaction) => {
-      acc[reaction.emoji] = (acc[reaction.emoji] ?? 0) + 1;
-      return acc;
-    },
-    {} as Record<string, number>
-  );
+  const grouped: Record<string, number> = {};
+  for (const reaction of reactions) {
+    grouped[reaction.emoji] = (grouped[reaction.emoji] ?? 0) + 1;
+  }
 
   return (
     <>
@@ -254,10 +276,28 @@ function ReactionList({
           className="rounded-full bg-gray-100 px-2 py-0.5 text-xs hover:bg-gray-200 dark:bg-dark-700 dark:hover:bg-dark-600"
           key={emoji}
           onClick={() => onReact(emoji)}
+          type="button"
         >
           {emoji} {count}
         </button>
       ))}
     </>
   );
+}
+
+// Re-export types needed by MessageWithDetails for external use
+export interface MessageWithDetailsType {
+  readonly attachments: readonly Attachment[];
+  readonly content: string | null;
+  readonly createdAt: ISODateString;
+  readonly id: UUID;
+  readonly isDeleted: boolean;
+  readonly isEdited: boolean;
+  readonly mentions: readonly Mention[];
+  readonly reactions: readonly Reaction[];
+  readonly replyTo: { readonly content: string | null } | null;
+  readonly replyToId: UUID | null;
+  readonly sender: User;
+  readonly senderId: UUID;
+  readonly updatedAt: ISODateString;
 }

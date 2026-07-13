@@ -3,8 +3,8 @@
  */
 
 import { useCallback } from "react";
-import { useMessageStore } from "@/shared/stores";
-import type { UUID } from "@/shared/types";
+import { useMessageStore } from "@/shared/stores/message-store";
+import type { UUID } from "@/shared/types/common";
 import { MessageInput } from "./message-input";
 import { MessageList } from "./message-list";
 

@@ -4,15 +4,11 @@
  */
 
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type {
-  DownloadProgress,
-  ISODateString,
-  MessageWithDetails,
-  Peer,
-  Reaction,
-  TypingIndicator,
-  UUID,
-} from "@/shared/types";
+import type { DownloadProgress } from "@/shared/types/attachment";
+import type { ISODateString, UUID } from "@/shared/types/common";
+import type { MessageWithDetails, Reaction } from "@/shared/types/message";
+import type { Peer } from "@/shared/types/network";
+import type { TypingIndicator } from "@/shared/types/user";
 
 /**
  * Event definitions mapping event names to their payload types.
@@ -21,7 +17,7 @@ interface TauriEvents {
   "app:error": { message: string; code: string };
 
   // App events
-  "app:ready": void;
+  "app:ready": undefined;
   "connection:error": { peerId: UUID; error: string };
   "download:cancelled": { downloadId: UUID };
   "download:completed": { downloadId: UUID; localPath: string };
@@ -122,7 +118,9 @@ export function createEventManager(): {
 
   return {
     cleanup: () => {
-      unlisteners.forEach((fn) => fn());
+      for (const fn of unlisteners) {
+        fn();
+      }
       unlisteners.length = 0;
     },
     subscribe: async <T extends EventName>(

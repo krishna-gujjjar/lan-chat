@@ -5,7 +5,8 @@
 
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
-import type { MessageWithDetails, Reaction, UUID } from "@/shared/types";
+import type { UUID } from "@/shared/types/common";
+import type { MessageWithDetails, Reaction } from "@/shared/types/message";
 
 interface MessageState {
   /** ID of message being edited */

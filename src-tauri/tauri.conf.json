@@ -4,15 +4,15 @@
   "version": "0.1.0",
   "identifier": "com.krishna.zenpaws",
   "build": {
-    "beforeDevCommand": "bun run dev",
-    "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run build",
+    "beforeDevCommand": "bun --bun run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "bun --bun run build",
     "frontendDist": "../dist"
   },
   "app": {
     "windows": [
       {
-        "title": "LAN Chat",
+        "title": "zenpaws",
         "width": 1200,
         "height": 800,
         "minWidth": 800,
@@ -42,18 +42,8 @@
     ]
   },
   "plugins": {
-    "shell": {
-      "open": true
-    },
     "fs": {
-      "scope": {
-        "allow": [
-          "$DOCUMENT/**",
-          "$DOWNLOAD/**",
-          "$APPDATA/**"
-        ],
-        "deny": []
-      }
+      "requireLiteralLeadingDot": false
     }
   }
 }

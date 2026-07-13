@@ -2,12 +2,12 @@
  * Application sidebar with user list and navigation.
  */
 
-import { Avatar } from "@/shared/components/ui";
+import { Avatar } from "@/shared/components/ui/avatar";
 import {
   selectOnlineUsers,
   selectTypingUsers,
   useUserStore,
-} from "@/shared/stores";
+} from "@/shared/stores/user-store";
 import { cn } from "@/utils/cn";
 
 export function AppSidebar() {

@@ -8,10 +8,8 @@ import { viteSingleFile } from "vite-plugin-singlefile";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const host = process.env.TAURI_DEV_HOST;
-
 // https://vite.dev/config/
-export default defineConfig(async () => ({
+export default defineConfig({
   clearScreen: false,
   plugins: [react(), tailwindcss(), viteSingleFile()],
   resolve: {
@@ -19,20 +17,4 @@ export default defineConfig(async () => ({
       "@": path.resolve(__dirname, "src"),
     },
   },
-  server: {
-    hmr: host
-      ? {
-          host,
-          port: 1421,
-          protocol: "ws",
-        }
-      : undefined,
-    host,
-    port: 1420,
-    strictPort: true,
-    watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
-    },
-  },
-}));
+});

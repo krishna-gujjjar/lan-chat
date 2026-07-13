@@ -3,8 +3,9 @@
  */
 
 import { useCallback, useEffect, useRef } from "react";
-import { selectMessages, useMessageStore, useUserStore } from "@/shared/stores";
-import type { UUID } from "@/shared/types";
+import { selectMessages, useMessageStore } from "@/shared/stores/message-store";
+import { useUserStore } from "@/shared/stores/user-store";
+import type { UUID } from "@/shared/types/common";
 import { formatDateGroup, isSameDay } from "../utils/format-time";
 import { MessageItem } from "./message-item";
 
@@ -56,7 +57,7 @@ export function MessageList({
       scrollContainerRef.current.scrollTop =
         scrollContainerRef.current.scrollHeight;
     }
-  }, [messages.length]);
+  }, []);
 
   // Initial scroll to bottom
   useEffect(() => {
@@ -125,7 +126,7 @@ function DateSeparator({ date }: { readonly date: string }) {
     <div className="flex items-center gap-4 px-4 py-3">
       <div className="flex-1 border-gray-200 border-t dark:border-dark-600" />
       <span className="font-medium text-gray-500 text-xs dark:text-gray-400">
-        {formatDateGroup(date as import("@/shared/types").ISODateString)}
+        {formatDateGroup(date as import("@/shared/types/common").ISODateString)}
       </span>
       <div className="flex-1 border-gray-200 border-t dark:border-dark-600" />
     </div>

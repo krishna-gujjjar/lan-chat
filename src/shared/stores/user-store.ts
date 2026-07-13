@@ -5,7 +5,8 @@
 
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
-import type { ConnectionStatus, User, UUID } from "@/shared/types";
+import type { ConnectionStatus, UUID } from "@/shared/types/common";
+import type { User } from "@/shared/types/user";
 
 interface UserState {
   /** Map of user connection statuses */

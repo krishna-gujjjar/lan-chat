@@ -2,7 +2,7 @@
  * Time formatting utilities for messages.
  */
 
-import type { ISODateString } from "@/shared/types";
+import type { ISODateString } from "@/shared/types/common";
 
 /**
  * Format message timestamp for display.

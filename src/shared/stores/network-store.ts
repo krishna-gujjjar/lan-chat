@@ -5,12 +5,8 @@
 
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
-import type {
-  ConnectionStatus,
-  NetworkStats,
-  Peer,
-  UUID,
-} from "@/shared/types";
+import type { ConnectionStatus, UUID } from "@/shared/types/common";
+import type { NetworkStats, Peer } from "@/shared/types/network";
 
 interface NetworkState {
   /** Overall connection status */

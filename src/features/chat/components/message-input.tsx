@@ -3,9 +3,9 @@
  */
 
 import { type KeyboardEvent, useCallback, useRef, useState } from "react";
-import { Button } from "@/shared/components/ui";
-import { useMessageStore } from "@/shared/stores";
-import type { UUID } from "@/shared/types";
+import { Button } from "@/shared/components/ui/button";
+import { useMessageStore } from "@/shared/stores/message-store";
+import type { UUID } from "@/shared/types/common";
 import { cn } from "@/utils/cn";
 
 interface MessageInputProps {
@@ -44,6 +44,13 @@ export function MessageInput({
       }, 2000);
     },
     [onTyping]
+  );
+
+  const handleChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      handleInput(e.target.value);
+    },
+    [handleInput]
   );
 
   const handleSend = useCallback(() => {
@@ -99,6 +106,7 @@ export function MessageInput({
           <button
             className="p-1 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
             onClick={cancelReply}
+            type="button"
           >
             ✕
           </button>
@@ -116,6 +124,7 @@ export function MessageInput({
           disabled={disabled}
           onClick={onAttach}
           title="Attach file"
+          type="button"
         >
           📎
         </button>
@@ -133,7 +142,7 @@ export function MessageInput({
               "max-h-32 overflow-y-auto"
             )}
             disabled={disabled}
-            onChange={(e) => handleInput(e.target.value)}
+            onChange={handleChange}
             onKeyDown={handleKeyDown}
             placeholder="Type a message..."
             ref={textareaRef}

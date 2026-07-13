@@ -2,7 +2,10 @@
  * Application header with title and connection status.
  */
 
-import { selectConnectedPeerCount, useNetworkStore } from "@/shared/stores";
+import {
+  selectConnectedPeerCount,
+  useNetworkStore,
+} from "@/shared/stores/network-store";
 import { cn } from "@/utils/cn";
 
 export function AppHeader() {
