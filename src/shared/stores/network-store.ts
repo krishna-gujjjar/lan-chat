@@ -10,19 +10,19 @@ import type { NetworkStats, Peer } from "@/shared/types/network";
 
 interface NetworkState {
   /** Overall connection status */
-  readonly connectionStatus: ConnectionStatus;
+  connectionStatus: ConnectionStatus;
   /** Error state */
-  readonly error: string | null;
+  error: string | null;
   /** Discovery running state */
-  readonly isDiscoveryRunning: boolean;
+  isDiscoveryRunning: boolean;
   /** Local network address */
-  readonly localAddress: string | null;
+  localAddress: string | null;
   /** Local port */
-  readonly localPort: number | null;
-  /** Map of peers by ID */
-  readonly peers: ReadonlyMap<UUID, Peer>;
+  localPort: number | null;
+  /** Array of peers */
+  peers: Peer[];
   /** Network statistics */
-  readonly stats: NetworkStats | null;
+  stats: NetworkStats | null;
 }
 
 interface NetworkActions {
@@ -41,7 +41,7 @@ interface NetworkActions {
   /** Add or update a peer */
   setPeer: (peer: Peer) => void;
   /** Add multiple peers */
-  setPeers: (peers: readonly Peer[]) => void;
+  setPeers: (peers: Peer[]) => void;
   /** Update network stats */
   setStats: (stats: NetworkStats) => void;
   /** Update peer connection status */
@@ -56,7 +56,7 @@ const initialState: NetworkState = {
   isDiscoveryRunning: false,
   localAddress: null,
   localPort: null,
-  peers: new Map(),
+  peers: [],
   stats: null,
 };
 
@@ -67,11 +67,9 @@ export const useNetworkStore = create<NetworkStore>()(
 
       removePeer: (peerId) => {
         set(
-          (state) => {
-            const newPeers = new Map(state.peers);
-            newPeers.delete(peerId);
-            return { peers: newPeers };
-          },
+          (state) => ({
+            peers: state.peers.filter((p) => p.id !== peerId),
+          }),
           false,
           "removePeer"
         );
@@ -103,24 +101,22 @@ export const useNetworkStore = create<NetworkStore>()(
 
       setPeer: (peer) => {
         set(
-          (state) => ({
-            peers: new Map(state.peers).set(peer.id, peer),
-          }),
+          (state) => {
+            const index = state.peers.findIndex((p) => p.id === peer.id);
+            if (index >= 0) {
+              const newPeers = [...state.peers];
+              newPeers[index] = peer;
+              return { peers: newPeers };
+            }
+            return { peers: [...state.peers, peer] };
+          },
           false,
           "setPeer"
         );
       },
 
       setPeers: (peers) => {
-        set(
-          (state) => {
-            const newPeers = new Map(state.peers);
-            peers.forEach((peer) => newPeers.set(peer.id, peer));
-            return { peers: newPeers };
-          },
-          false,
-          "setPeers"
-        );
+        set({ peers }, false, "setPeers");
       },
 
       setStats: (stats) => {
@@ -129,15 +125,11 @@ export const useNetworkStore = create<NetworkStore>()(
 
       updatePeerConnection: (peerId, isConnected) => {
         set(
-          (state) => {
-            const peer = state.peers.get(peerId);
-            if (peer) {
-              const newPeers = new Map(state.peers);
-              newPeers.set(peerId, { ...peer, isConnected });
-              return { peers: newPeers };
-            }
-            return state;
-          },
+          (state) => ({
+            peers: state.peers.map((peer) =>
+              peer.id === peerId ? { ...peer, isConnected } : peer
+            ),
+          }),
           false,
           "updatePeerConnection"
         );
@@ -147,14 +139,6 @@ export const useNetworkStore = create<NetworkStore>()(
   )
 );
 
-/** Selector for all connected peers */
-export const selectConnectedPeers = (state: NetworkStore): readonly Peer[] =>
-  Array.from(state.peers.values()).filter((peer) => peer.isConnected);
-
 /** Selector for connected peer count */
 export const selectConnectedPeerCount = (state: NetworkStore): number =>
-  Array.from(state.peers.values()).filter((peer) => peer.isConnected).length;
-
-/** Selector for a specific peer */
-export const selectPeer = (peerId: UUID) => (state: NetworkStore) =>
-  state.peers.get(peerId);
+  state.peers.filter((peer) => peer.isConnected).length;

@@ -10,38 +10,38 @@ import type { MessageWithDetails, Reaction } from "@/shared/types/message";
 
 interface MessageState {
   /** ID of message being edited */
-  readonly editingMessageId: UUID | null;
+  editingMessageId: UUID | null;
   /** Error state */
-  readonly error: string | null;
-  readonly hasMore: boolean;
+  error: string | null;
+  hasMore: boolean;
   /** Loading states */
-  readonly isLoading: boolean;
-  readonly isLoadingMore: boolean;
-  /** Ordered list of message IDs */
-  readonly messageIds: readonly UUID[];
-  /** Map of messages by ID */
-  readonly messagesById: ReadonlyMap<UUID, MessageWithDetails>;
+  isLoading: boolean;
+  isLoadingMore: boolean;
+  /** Ordered list of messages */
+  messages: MessageWithDetails[];
   /** ID of message being replied to */
-  readonly replyToId: UUID | null;
+  replyToId: UUID | null;
   /** Search query */
-  readonly searchQuery: string;
+  searchQuery: string;
   /** Search results */
-  readonly searchResults: readonly UUID[];
+  searchResults: UUID[];
   /** Selected message IDs */
-  readonly selectedMessageIds: ReadonlySet<UUID>;
+  selectedMessageIds: UUID[];
 }
 
 interface MessageActions {
   /** Add a new message */
   addMessage: (message: MessageWithDetails) => void;
   /** Add multiple messages (for initial load) */
-  addMessages: (messages: readonly MessageWithDetails[]) => void;
+  addMessages: (messages: MessageWithDetails[]) => void;
   /** Add a reaction to a message */
   addReaction: (messageId: UUID, reaction: Reaction) => void;
   /** Clear message selection */
   clearSelection: () => void;
+  /** Get message by ID */
+  getMessage: (messageId: UUID) => MessageWithDetails | undefined;
   /** Prepend messages (for loading older messages) */
-  prependMessages: (messages: readonly MessageWithDetails[]) => void;
+  prependMessages: (messages: MessageWithDetails[]) => void;
   /** Remove a message (soft delete) */
   removeMessage: (messageId: UUID) => void;
   /** Remove a reaction from a message */
@@ -63,7 +63,7 @@ interface MessageActions {
   /** Set search query */
   setSearchQuery: (query: string) => void;
   /** Set search results */
-  setSearchResults: (results: readonly UUID[]) => void;
+  setSearchResults: (results: UUID[]) => void;
   /** Toggle message selection */
   toggleMessageSelection: (messageId: UUID) => void;
   /** Update an existing message */
@@ -81,12 +81,11 @@ const initialState: MessageState = {
   hasMore: true,
   isLoading: false,
   isLoadingMore: false,
-  messageIds: [],
-  messagesById: new Map(),
+  messages: [],
   replyToId: null,
   searchQuery: "",
   searchResults: [],
-  selectedMessageIds: new Set(),
+  selectedMessageIds: [],
 };
 
 export const useMessageStore = create<MessageStore>()(
@@ -97,8 +96,7 @@ export const useMessageStore = create<MessageStore>()(
       addMessage: (message) => {
         set(
           (state) => ({
-            messageIds: [...state.messageIds, message.id],
-            messagesById: new Map(state.messagesById).set(message.id, message),
+            messages: [...state.messages, message],
           }),
           false,
           "addMessage"
@@ -108,15 +106,9 @@ export const useMessageStore = create<MessageStore>()(
       addMessages: (messages) => {
         set(
           (state) => {
-            const newMap = new Map(state.messagesById);
-            const newIds = [...state.messageIds];
-            messages.forEach((msg) => {
-              if (!newMap.has(msg.id)) {
-                newIds.push(msg.id);
-              }
-              newMap.set(msg.id, msg);
-            });
-            return { messageIds: newIds, messagesById: newMap };
+            const existingIds = new Set(state.messages.map((m) => m.id));
+            const newMessages = messages.filter((m) => !existingIds.has(m.id));
+            return { messages: [...state.messages, ...newMessages] };
           },
           false,
           "addMessages"
@@ -124,40 +116,31 @@ export const useMessageStore = create<MessageStore>()(
       },
 
       addReaction: (messageId, reaction) => {
-        const existing = get().messagesById.get(messageId);
-        if (existing) {
-          set(
-            (state) => ({
-              messagesById: new Map(state.messagesById).set(messageId, {
-                ...existing,
-                reactions: [...existing.reactions, reaction],
-              }),
-            }),
-            false,
-            "addReaction"
-          );
-        }
+        set(
+          (state) => ({
+            messages: state.messages.map((msg) =>
+              msg.id === messageId
+                ? { ...msg, reactions: [...msg.reactions, reaction] }
+                : msg
+            ),
+          }),
+          false,
+          "addReaction"
+        );
       },
 
       clearSelection: () => {
-        set({ selectedMessageIds: new Set() }, false, "clearSelection");
+        set({ selectedMessageIds: [] }, false, "clearSelection");
       },
+
+      getMessage: (messageId) => get().messages.find((m) => m.id === messageId),
 
       prependMessages: (messages) => {
         set(
           (state) => {
-            const newMap = new Map(state.messagesById);
-            const newIds: UUID[] = [];
-            messages.forEach((msg) => {
-              if (!newMap.has(msg.id)) {
-                newIds.push(msg.id);
-              }
-              newMap.set(msg.id, msg);
-            });
-            return {
-              messageIds: [...newIds, ...state.messageIds],
-              messagesById: newMap,
-            };
+            const existingIds = new Set(state.messages.map((m) => m.id));
+            const newMessages = messages.filter((m) => !existingIds.has(m.id));
+            return { messages: [...newMessages, ...state.messages] };
           },
           false,
           "prependMessages"
@@ -165,38 +148,34 @@ export const useMessageStore = create<MessageStore>()(
       },
 
       removeMessage: (messageId) => {
-        const existing = get().messagesById.get(messageId);
-        if (existing) {
-          set(
-            (state) => ({
-              messagesById: new Map(state.messagesById).set(messageId, {
-                ...existing,
-                content: null,
-                isDeleted: true,
-              }),
-            }),
-            false,
-            "removeMessage"
-          );
-        }
+        set(
+          (state) => ({
+            messages: state.messages.map((msg) =>
+              msg.id === messageId
+                ? { ...msg, content: null, isDeleted: true }
+                : msg
+            ),
+          }),
+          false,
+          "removeMessage"
+        );
       },
 
       removeReaction: (messageId, reactionId) => {
-        const existing = get().messagesById.get(messageId);
-        if (existing) {
-          set(
-            (state) => ({
-              messagesById: new Map(state.messagesById).set(messageId, {
-                ...existing,
-                reactions: existing.reactions.filter(
-                  (r) => r.id !== reactionId
-                ),
-              }),
-            }),
-            false,
-            "removeReaction"
-          );
-        }
+        set(
+          (state) => ({
+            messages: state.messages.map((msg) =>
+              msg.id === messageId
+                ? {
+                    ...msg,
+                    reactions: msg.reactions.filter((r) => r.id !== reactionId),
+                  }
+                : msg
+            ),
+          }),
+          false,
+          "removeReaction"
+        );
       },
 
       reset: () => {
@@ -238,13 +217,12 @@ export const useMessageStore = create<MessageStore>()(
       toggleMessageSelection: (messageId) => {
         set(
           (state) => {
-            const newSelection = new Set(state.selectedMessageIds);
-            if (newSelection.has(messageId)) {
-              newSelection.delete(messageId);
-            } else {
-              newSelection.add(messageId);
-            }
-            return { selectedMessageIds: newSelection };
+            const isSelected = state.selectedMessageIds.includes(messageId);
+            return {
+              selectedMessageIds: isSelected
+                ? state.selectedMessageIds.filter((id) => id !== messageId)
+                : [...state.selectedMessageIds, messageId],
+            };
           },
           false,
           "toggleMessageSelection"
@@ -252,43 +230,20 @@ export const useMessageStore = create<MessageStore>()(
       },
 
       updateMessage: (messageId, updates) => {
-        const existing = get().messagesById.get(messageId);
-        if (existing) {
-          set(
-            (state) => ({
-              messagesById: new Map(state.messagesById).set(messageId, {
-                ...existing,
-                ...updates,
-              }),
-            }),
-            false,
-            "updateMessage"
-          );
-        }
+        set(
+          (state) => ({
+            messages: state.messages.map((msg) =>
+              msg.id === messageId ? { ...msg, ...updates } : msg
+            ),
+          }),
+          false,
+          "updateMessage"
+        );
       },
     }),
     { name: "message-store" }
   )
 );
 
-/** Selector for all messages in order */
-export const selectMessages = (
-  state: MessageStore
-): readonly MessageWithDetails[] =>
-  state.messageIds
-    .map((id) => state.messagesById.get(id))
-    .filter((msg): msg is MessageWithDetails => msg !== undefined);
-
-/** Selector for a specific message */
-export const selectMessage = (messageId: UUID) => (state: MessageStore) =>
-  state.messagesById.get(messageId);
-
-/** Selector for reply target message */
-export const selectReplyToMessage = (state: MessageStore) =>
-  state.replyToId ? state.messagesById.get(state.replyToId) : null;
-
-/** Selector for editing message */
-export const selectEditingMessage = (state: MessageStore) =>
-  state.editingMessageId
-    ? state.messagesById.get(state.editingMessageId)
-    : null;
+/** Selector for all messages - returns stable reference */
+export const selectMessages = (state: MessageStore) => state.messages;

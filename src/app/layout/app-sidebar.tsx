@@ -2,20 +2,34 @@
  * Application sidebar with user list and navigation.
  */
 
+import { useMemo } from "react";
 import { Avatar } from "@/shared/components/ui/avatar";
-import {
-  selectOnlineUsers,
-  selectTypingUsers,
-  useUserStore,
-} from "@/shared/stores/user-store";
+import { useUserStore } from "@/shared/stores/user-store";
+import type { User } from "@/shared/types/user";
 import { cn } from "@/utils/cn";
 
 export function AppSidebar() {
   const currentUser = useUserStore((state) => state.currentUser);
-  const onlineUsers = useUserStore(selectOnlineUsers);
-  const typingUsers = useUserStore(selectTypingUsers);
+  const users = useUserStore((state) => state.users);
+  const connectionStatuses = useUserStore((state) => state.connectionStatuses);
+  const typingUsersMap = useUserStore((state) => state.typingUsers);
 
-  const typingUserIds = new Set(typingUsers.map((u) => u.id));
+  // Derive online users from stable state
+  const onlineUsers = useMemo(
+    () => users.filter((user) => connectionStatuses[user.id] === "connected"),
+    [users, connectionStatuses]
+  );
+
+  // Derive typing user IDs
+  const typingUserIds = useMemo(
+    () =>
+      new Set(
+        Object.entries(typingUsersMap)
+          .filter(([, isTyping]) => isTyping)
+          .map(([userId]) => userId)
+      ),
+    [typingUsersMap]
+  );
 
   return (
     <aside className="flex w-64 flex-col border-gray-200 border-r dark:border-dark-600">
@@ -49,7 +63,7 @@ export function AppSidebar() {
           </h2>
         </div>
         <ul className="space-y-1 px-2">
-          {onlineUsers.map((user) => (
+          {onlineUsers.map((user: User) => (
             <li key={user.id}>
               <div
                 className={cn(
@@ -68,21 +82,21 @@ export function AppSidebar() {
                   <p className="truncate text-gray-900 text-sm dark:text-white">
                     {user.username}
                   </p>
-                  {typingUserIds.has(user.id) && (
+                  {typingUserIds.has(user.id) ? (
                     <p className="flex items-center gap-1 text-gray-500 text-xs dark:text-gray-400">
                       <TypingIndicator />
                       typing...
                     </p>
-                  )}
+                  ) : null}
                 </div>
               </div>
             </li>
           ))}
-          {onlineUsers.length === 0 && (
+          {onlineUsers.length === 0 ? (
             <li className="px-2 py-4 text-center text-gray-500 text-sm dark:text-gray-400">
               No other users online
             </li>
-          )}
+          ) : null}
         </ul>
       </div>
     </aside>

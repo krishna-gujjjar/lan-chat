@@ -2,7 +2,13 @@
  * Message input component with attachment support.
  */
 
-import { type KeyboardEvent, useCallback, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/shared/components/ui/button";
 import { useMessageStore } from "@/shared/stores/message-store";
 import type { UUID } from "@/shared/types/common";
@@ -25,10 +31,17 @@ export function MessageInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const replyToMessage = useMessageStore((state) =>
-    state.replyToId ? state.messagesById.get(state.replyToId) : null
-  );
+  const replyToId = useMessageStore((state) => state.replyToId);
+  const messages = useMessageStore((state) => state.messages);
   const setReplyTo = useMessageStore((state) => state.setReplyTo);
+
+  // Derive reply message from stable state
+  const replyToMessage = useMemo(() => {
+    if (!replyToId) {
+      return null;
+    }
+    return messages.find((m) => m.id === replyToId) ?? null;
+  }, [replyToId, messages]);
 
   const handleInput = useCallback(
     (value: string) => {
@@ -90,7 +103,7 @@ export function MessageInput({
   return (
     <div className="border-gray-200 border-t p-4 dark:border-dark-600">
       {/* Reply preview */}
-      {replyToMessage && (
+      {replyToMessage ? (
         <div className="mb-2 flex items-center gap-2 rounded-lg bg-gray-100 px-3 py-2 dark:bg-dark-700">
           <div className="min-w-0 flex-1">
             <p className="text-gray-500 text-xs dark:text-gray-400">
@@ -111,7 +124,7 @@ export function MessageInput({
             ✕
           </button>
         </div>
-      )}
+      ) : null}
 
       {/* Input area */}
       <div className="flex items-end gap-2">

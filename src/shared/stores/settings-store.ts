@@ -11,11 +11,11 @@ import { DEFAULT_SETTINGS } from "@/shared/types/settings";
 
 interface SettingsState {
   /** Loading state */
-  readonly isLoading: boolean;
+  isLoading: boolean;
   /** Sync status with backend */
-  readonly isSynced: boolean;
+  isSynced: boolean;
   /** Application settings */
-  readonly settings: AppSettings;
+  settings: AppSettings;
 }
 
 interface SettingsActions {
@@ -171,9 +171,3 @@ export const selectTheme = (state: SettingsStore) => state.settings.theme;
 
 /** Selector for font size */
 export const selectFontSize = (state: SettingsStore) => state.settings.fontSize;
-
-/** Selector for notification settings */
-export const selectNotificationSettings = (state: SettingsStore) => ({
-  enabled: state.settings.notificationsEnabled,
-  sound: state.settings.soundEnabled,
-});

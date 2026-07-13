@@ -10,18 +10,18 @@ import type { User } from "@/shared/types/user";
 
 interface UserState {
   /** Map of user connection statuses */
-  readonly connectionStatuses: ReadonlyMap<UUID, ConnectionStatus>;
+  connectionStatuses: Record<UUID, ConnectionStatus>;
   /** Current local user */
-  readonly currentUser: User | null;
+  currentUser: User | null;
   /** Error state */
-  readonly error: string | null;
-  readonly isInitialized: boolean;
+  error: string | null;
+  isInitialized: boolean;
   /** Loading states */
-  readonly isLoading: boolean;
+  isLoading: boolean;
   /** Map of users currently typing */
-  readonly typingUsers: ReadonlyMap<UUID, boolean>;
-  /** Map of all known users by ID */
-  readonly users: ReadonlyMap<UUID, User>;
+  typingUsers: Record<UUID, boolean>;
+  /** Array of all known users */
+  users: User[];
 }
 
 interface UserActions {
@@ -46,7 +46,7 @@ interface UserActions {
   /** Add or update a user */
   setUser: (user: User) => void;
   /** Add multiple users */
-  setUsers: (users: readonly User[]) => void;
+  setUsers: (users: User[]) => void;
   /** Update the current user */
   updateCurrentUser: (updates: Partial<User>) => void;
 }
@@ -54,13 +54,13 @@ interface UserActions {
 type UserStore = UserState & UserActions;
 
 const initialState: UserState = {
-  connectionStatuses: new Map(),
+  connectionStatuses: {},
   currentUser: null,
   error: null,
   isInitialized: false,
   isLoading: false,
-  typingUsers: new Map(),
-  users: new Map(),
+  typingUsers: {},
+  users: [],
 };
 
 export const useUserStore = create<UserStore>()(
@@ -71,8 +71,8 @@ export const useUserStore = create<UserStore>()(
       clearTypingStatus: (userId) => {
         set(
           (state) => {
-            const newTyping = new Map(state.typingUsers);
-            newTyping.delete(userId);
+            const newTyping = { ...state.typingUsers };
+            delete newTyping[userId];
             return { typingUsers: newTyping };
           },
           false,
@@ -83,16 +83,14 @@ export const useUserStore = create<UserStore>()(
       removeUser: (userId) => {
         set(
           (state) => {
-            const newUsers = new Map(state.users);
-            newUsers.delete(userId);
-            const newStatuses = new Map(state.connectionStatuses);
-            newStatuses.delete(userId);
-            const newTyping = new Map(state.typingUsers);
-            newTyping.delete(userId);
+            const newStatuses = { ...state.connectionStatuses };
+            delete newStatuses[userId];
+            const newTyping = { ...state.typingUsers };
+            delete newTyping[userId];
             return {
               connectionStatuses: newStatuses,
               typingUsers: newTyping,
-              users: newUsers,
+              users: state.users.filter((u) => u.id !== userId),
             };
           },
           false,
@@ -107,10 +105,10 @@ export const useUserStore = create<UserStore>()(
       setConnectionStatus: (userId, status) => {
         set(
           (state) => ({
-            connectionStatuses: new Map(state.connectionStatuses).set(
-              userId,
-              status
-            ),
+            connectionStatuses: {
+              ...state.connectionStatuses,
+              [userId]: status,
+            },
           }),
           false,
           "setConnectionStatus"
@@ -137,7 +135,7 @@ export const useUserStore = create<UserStore>()(
       setTypingStatus: (userId, isTyping) => {
         set(
           (state) => ({
-            typingUsers: new Map(state.typingUsers).set(userId, isTyping),
+            typingUsers: { ...state.typingUsers, [userId]: isTyping },
           }),
           false,
           "setTypingStatus"
@@ -146,24 +144,22 @@ export const useUserStore = create<UserStore>()(
 
       setUser: (user) => {
         set(
-          (state) => ({
-            users: new Map(state.users).set(user.id, user),
-          }),
+          (state) => {
+            const index = state.users.findIndex((u) => u.id === user.id);
+            if (index >= 0) {
+              const newUsers = [...state.users];
+              newUsers[index] = user;
+              return { users: newUsers };
+            }
+            return { users: [...state.users, user] };
+          },
           false,
           "setUser"
         );
       },
 
       setUsers: (users) => {
-        set(
-          (state) => {
-            const newUsers = new Map(state.users);
-            users.forEach((user) => newUsers.set(user.id, user));
-            return { users: newUsers };
-          },
-          false,
-          "setUsers"
-        );
+        set({ users }, false, "setUsers");
       },
 
       updateCurrentUser: (updates) => {
@@ -178,20 +174,3 @@ export const useUserStore = create<UserStore>()(
     { name: "user-store" }
   )
 );
-
-/** Selector for getting a user by ID */
-export const selectUser = (userId: UUID) => (state: UserStore) =>
-  state.users.get(userId);
-
-/** Selector for all online users */
-export const selectOnlineUsers = (state: UserStore) =>
-  Array.from(state.users.values()).filter(
-    (user) => state.connectionStatuses.get(user.id) === "connected"
-  );
-
-/** Selector for users who are typing */
-export const selectTypingUsers = (state: UserStore) =>
-  Array.from(state.typingUsers.entries())
-    .filter(([, isTyping]) => isTyping)
-    .map(([userId]) => state.users.get(userId))
-    .filter((user): user is User => user !== undefined);
