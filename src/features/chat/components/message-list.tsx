@@ -26,40 +26,36 @@ export function MessageList({
 }: MessageListProps) {
   const messages = useMessageStore((state) => state.messages);
   const isLoading = useMessageStore((state) => state.isLoading);
+  const isLoadingMore = useMessageStore((state) => state.isLoadingMore);
   const hasMore = useMessageStore((state) => state.hasMore);
   const currentUser = useUserStore((state) => state.currentUser);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
 
-  // Handle scroll for infinite loading
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) {
       return;
     }
 
-    // Check if at top for loading more
-    if (container.scrollTop < 100 && hasMore && !isLoading) {
+    if (container.scrollTop < 100 && hasMore && !isLoadingMore) {
       onLoadMore();
     }
 
-    // Track if user is at bottom
     const isNearBottom =
       container.scrollHeight - container.scrollTop - container.clientHeight <
       100;
     isAtBottomRef.current = isNearBottom;
-  }, [hasMore, isLoading, onLoadMore]);
+  }, [hasMore, isLoadingMore, onLoadMore]);
 
-  // Auto-scroll to bottom on new messages
   useEffect(() => {
     if (isAtBottomRef.current && scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop =
         scrollContainerRef.current.scrollHeight;
     }
-  }, []);
+  }, [messages.length]);
 
-  // Initial scroll to bottom
   useEffect(() => {
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop =
@@ -67,7 +63,6 @@ export function MessageList({
     }
   }, []);
 
-  // Memoize grouped messages to avoid recomputation
   const groupedMessages = useMemo(
     () =>
       messages.map((message, index) => {
@@ -96,9 +91,9 @@ export function MessageList({
       ref={scrollContainerRef}
     >
       {/* Loading indicator */}
-      {isLoading ? (
+      {isLoading || isLoadingMore ? (
         <div className="flex justify-center py-4">
-          <div className="flex items-center gap-2 text-gray-500 text-sm">
+          <div className="flex items-center gap-2 font-terminal text-retro-text-dim text-sm">
             <LoadingSpinner />
             Loading messages...
           </div>
@@ -135,11 +130,11 @@ export function MessageList({
 function DateSeparator({ date }: { readonly date: ISODateString }) {
   return (
     <div className="flex items-center gap-4 px-4 py-3">
-      <div className="flex-1 border-gray-200 border-t dark:border-dark-600" />
-      <span className="font-medium text-gray-500 text-xs dark:text-gray-400">
+      <div className="flex-1 border-retro-border border-t" />
+      <span className="font-pixel text-[0.55rem] text-retro-text-dim uppercase tracking-widest">
         {formatDateGroup(date)}
       </span>
-      <div className="flex-1 border-gray-200 border-t dark:border-dark-600" />
+      <div className="flex-1 border-retro-border border-t" />
     </div>
   );
 }
@@ -148,10 +143,8 @@ function EmptyState() {
   return (
     <div className="flex h-full items-center justify-center">
       <div className="text-center">
-        <p className="font-medium text-gray-900 text-lg dark:text-white">
-          No messages yet
-        </p>
-        <p className="mt-1 text-gray-500 text-sm dark:text-gray-400">
+        <p className="mb-2 font-pixel text-retro-text text-sm">NO MESSAGES</p>
+        <p className="font-terminal text-retro-text-dim text-sm">
           Start the conversation by sending a message
         </p>
       </div>
@@ -162,7 +155,7 @@ function EmptyState() {
 function LoadingSpinner() {
   return (
     <svg
-      className="h-5 w-5 animate-spin text-gray-400"
+      className="h-5 w-5 animate-spin text-retro-green"
       fill="none"
       viewBox="0 0 24 24"
       xmlns="http://www.w3.org/2000/svg"

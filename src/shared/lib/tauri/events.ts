@@ -75,7 +75,7 @@ export async function listenToEvent<T extends EventName>(
   event: T,
   handler: (payload: EventPayload<T>) => void
 ): Promise<UnlistenFn> {
-  return listen<EventPayload<T>>(event, (e) => handler(e.payload));
+  return await listen<EventPayload<T>>(event, (e) => handler(e.payload));
 }
 
 /**

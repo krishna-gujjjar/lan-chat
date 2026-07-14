@@ -2,7 +2,7 @@
  * Input component with variants.
  */
 
-import type { InputHTMLAttributes } from "react";
+import type { InputHTMLAttributes, RefObject } from "react";
 import { cn } from "@/utils/cn";
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -22,7 +22,7 @@ export const Input = ({
 
   return (
     <div className="w-full">
-      {label && (
+      {!!label && (
         <label
           className="mb-1 block font-medium text-gray-700 text-sm dark:text-gray-300"
           htmlFor={inputId}
@@ -47,7 +47,7 @@ export const Input = ({
         ref={ref}
         {...props}
       />
-      {error && <p className="mt-1 text-red-500 text-sm">{error}</p>}
+      {!!error && <p className="mt-1 text-red-500 text-sm">{error}</p>}
     </div>
   );
 };

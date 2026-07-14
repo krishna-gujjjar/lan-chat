@@ -22,6 +22,10 @@ pub struct AppState {
     /// Services
     pub user_service: Arc<UserService>,
     pub settings_service: Arc<SettingsService>,
+    /// App handle for emitting events
+    pub app_handle: RwLock<Option<AppHandle>>,
+    /// Local TCP port for peer connections
+    pub local_tcp_port: RwLock<Option<u16>>,
 }
 
 impl AppState {
@@ -56,18 +60,19 @@ impl AppState {
             app_data_dir,
             user_service,
             settings_service,
+            app_handle: RwLock::new(Some(handle.clone())),
+            local_tcp_port: RwLock::new(None),
         })
     }
 
     /// Ensure all required application directories exist.
-    fn ensure_app_directories(handle: &AppHandle) -> AppResult<PathBuf> {
+    fn ensure_app_directories(_handle: &AppHandle) -> AppResult<PathBuf> {
         use std::fs;
 
         // Get documents directory and create app folder
-        let documents_dir = dirs::document_dir()
-            .ok_or_else(|| crate::errors::AppError::Config(
-                "Could not find documents directory".to_string()
-            ))?;
+        let documents_dir = dirs::document_dir().ok_or_else(|| {
+            crate::errors::AppError::Config("Could not find documents directory".to_string())
+        })?;
 
         let app_dir = documents_dir.join("LanChat");
 
@@ -90,9 +95,6 @@ impl AppState {
                 tracing::debug!("Created directory: {:?}", path);
             }
         }
-
-        // Store handle for later use
-        let _ = handle;
 
         Ok(app_dir)
     }

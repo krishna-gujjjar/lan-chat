@@ -6,6 +6,7 @@ pub mod commands;
 pub mod database;
 pub mod errors;
 pub mod models;
+pub mod network;
 pub mod services;
 pub mod state;
 
@@ -36,12 +37,31 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let handle = app.handle().clone();
-            
+
             // Initialize application state
             tauri::async_runtime::block_on(async {
-                let state = AppState::new(&handle).await
+                let state = AppState::new(&handle)
+                    .await
                     .expect("Failed to initialize application state");
-                app.manage(Arc::new(state));
+                let state_arc = Arc::new(state);
+                app.manage(state_arc.clone());
+
+                // Start TCP listener for peer connections
+                match network::peer_connection::start_tcp_listener(state_arc.clone()).await {
+                    Ok(port) => {
+                        tracing::info!("TCP listener active on port {}", port);
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to start TCP listener: {}", e);
+                    }
+                }
+
+                // Start discovery if user exists
+                if state_arc.current_user.read().await.is_some() {
+                    if let Err(e) = network::discovery::start_discovery_service(state_arc).await {
+                        tracing::error!("Failed to start discovery: {}", e);
+                    }
+                }
             });
 
             tracing::info!("Application setup complete");
