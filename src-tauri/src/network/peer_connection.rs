@@ -40,12 +40,26 @@ struct NetworkPacket {
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+const PREFERRED_TCP_PORT: u16 = 42_422;
+const MAX_PACKET_BYTES: usize = 8 * 1024 * 1024;
 
 /// Start TCP listener for incoming peer connections.
 pub async fn start_tcp_listener(
     state: Arc<AppState>,
 ) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
-    let listener = TcpListener::bind("0.0.0.0:0").await?;
+    // Prefer a stable, firewall-friendly port. Fall back to an ephemeral port so
+    // multiple local profiles can still run; discovery advertises the actual port.
+    let listener = match TcpListener::bind(("0.0.0.0", PREFERRED_TCP_PORT)).await {
+        Ok(listener) => listener,
+        Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+            tracing::warn!(
+                port = PREFERRED_TCP_PORT,
+                "preferred TCP port is busy; using an ephemeral port"
+            );
+            TcpListener::bind(("0.0.0.0", 0)).await?
+        }
+        Err(error) => return Err(error.into()),
+    };
     let port = listener.local_addr()?.port();
 
     // Store port in state
@@ -99,6 +113,9 @@ async fn handle_peer_stream(
                         accumulated[3],
                     ]) as usize;
 
+                    if len == 0 || len > MAX_PACKET_BYTES {
+                        return Err(format!("invalid network packet length: {len}").into());
+                    }
                     if accumulated.len() < 4 + len {
                         break;
                     }
@@ -130,23 +147,34 @@ async fn handle_network_packet(
     match packet.packet_type {
         NetworkMessageType::ChatMessage => {
             if let Ok(msg) = serde_json::from_value::<MessageWithDetails>(packet.payload) {
-                // Store in database
-                let service = crate::services::MessageService::new(state.database.clone());
-                let _ = service
-                    .create_message(
-                        msg.message.sender_id,
-                        crate::models::CreateMessageInput {
-                            content: msg.message.content.clone().unwrap_or_default(),
-                            reply_to_id: msg.message.reply_to_id,
-                            mentioned_user_ids: None,
-                            attachment_ids: None,
-                        },
-                    )
-                    .await;
+                // A remote message must retain its original UUID and timestamps. Creating a
+                // new local Message here used to make replies, deduplication and attachments
+                // point at an ID that did not exist on the receiver.
+                state
+                    .user_service
+                    .upsert_remote_user(msg.sender.id, msg.sender.username.clone())
+                    .await?;
+                let result = sqlx::query(
+                    "INSERT OR IGNORE INTO messages (id, sender_id, content, reply_to_id, is_edited, is_deleted, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                )
+                .bind(msg.message.id.to_string())
+                .bind(msg.message.sender_id.to_string())
+                .bind(&msg.message.content)
+                .bind(msg.message.reply_to_id.map(|id| id.to_string()))
+                .bind(msg.message.is_edited)
+                .bind(msg.message.is_deleted)
+                .bind(format!("{:?}", msg.message.status).to_lowercase())
+                .bind(msg.message.created_at.to_rfc3339())
+                .bind(msg.message.updated_at.to_rfc3339())
+                .execute(state.database.pool())
+                .await?;
 
-                // Emit to frontend
-                if let Some(app_handle) = state.app_handle.read().await.as_ref() {
-                    let _ = app_handle.emit("message:created", msg);
+                // Emit only once. UDP discovery and reconnects may legitimately cause
+                // the same packet to be delivered more than once.
+                if result.rows_affected() == 1 {
+                    if let Some(app_handle) = state.app_handle.read().await.as_ref() {
+                        let _ = app_handle.emit("message:created", msg);
+                    }
                 }
             }
         }
@@ -295,13 +323,25 @@ pub async fn broadcast_message(
 
         match timeout(CONNECT_TIMEOUT, TcpStream::connect(&addr)).await {
             Ok(Ok(mut stream)) => {
-                let _ = timeout(WRITE_TIMEOUT, async {
-                    let _ = stream.write_all(&data).await;
-                    let _ = stream.flush().await;
+                match timeout(WRITE_TIMEOUT, async {
+                    stream.write_all(&data).await?;
+                    stream.flush().await
                 })
-                .await;
+                .await
+                {
+                    Ok(Ok(())) => {
+                        tracing::info!(peer = %addr, message_id = %message.message.id, "message delivered to peer socket")
+                    }
+                    Ok(Err(error)) => {
+                        tracing::warn!(peer = %addr, %error, "failed writing message")
+                    }
+                    Err(_) => tracing::warn!(peer = %addr, "message write timed out"),
+                }
             }
-            _ => {}
+            Ok(Err(error)) => {
+                tracing::warn!(peer = %addr, %error, "cannot deliver message: connection refused or unavailable")
+            }
+            Err(_) => tracing::warn!(peer = %addr, "cannot deliver message: connection timed out"),
         }
     }
 

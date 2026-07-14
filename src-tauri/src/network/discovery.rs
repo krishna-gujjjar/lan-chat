@@ -11,8 +11,10 @@ use tokio::net::UdpSocket;
 use tokio::time::{interval, Duration};
 use uuid::Uuid;
 
-const DISCOVERY_PORT: u16 = 9876;
-const DISCOVERY_INTERVAL_SECS: u64 = 5;
+// Deliberately avoid common development ports. Both UDP discovery and the TCP
+// transport must be allowed through the host firewall on private networks.
+pub const DISCOVERY_PORT: u16 = 42_421;
+const DISCOVERY_INTERVAL_SECS: u64 = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PresencePacket {
@@ -38,7 +40,11 @@ pub async fn start_discovery_service(
     let socket = Arc::new(UdpSocket::bind(bind_addr).await?);
     socket.set_broadcast(true)?;
 
-    let local_port = state.local_tcp_port.read().await.unwrap_or(9877);
+    let local_port = state
+        .local_tcp_port
+        .read()
+        .await
+        .ok_or("TCP listener has not started")?;
 
     // Spawn broadcaster
     let broadcast_socket = socket.clone();
@@ -106,10 +112,9 @@ async fn handle_presence(state: &Arc<AppState>, packet: PresencePacket, address:
         .await;
 
     // Upsert peer
-    let peer = Peer::new(user_id, packet.username, address, packet.port);
-    let peer_id = peer.id;
+    let mut peer = Peer::new(user_id, packet.username, address, packet.port);
 
-    let existing = sqlx::query("SELECT id FROM peers WHERE user_id = ?")
+    let existing = sqlx::query("SELECT id, is_connected, created_at FROM peers WHERE user_id = ?")
         .bind(user_id.to_string())
         .fetch_optional(state.database.pool())
         .await;
@@ -119,8 +124,23 @@ async fn handle_presence(state: &Arc<AppState>, packet: PresencePacket, address:
             Ok(id) => id,
             Err(_) => return,
         };
+        // Presence refreshes must retain the database identity. Generating a new
+        // peer UUID on every packet made later connection attempts query a peer
+        // that did not exist and produced duplicate frontend entries.
+        peer.id = match Uuid::parse_str(&id) {
+            Ok(id) => id,
+            Err(_) => return,
+        };
+        peer.is_connected = matches!(row.try_get::<i32, _>("is_connected"), Ok(1));
+        if let Ok(created_at) = row.try_get::<String, _>("created_at") {
+            if let Ok(value) = chrono::DateTime::parse_from_rfc3339(&created_at) {
+                peer.created_at = value.with_timezone(&chrono::Utc);
+            }
+        }
+        peer.last_seen_at = Some(chrono::Utc::now());
+        peer.updated_at = chrono::Utc::now();
         let _ = sqlx::query(
-            "UPDATE peers SET address = ?, port = ?, is_connected = 0, last_seen_at = ?, updated_at = ? WHERE id = ?",
+            "UPDATE peers SET address = ?, port = ?, last_seen_at = ?, updated_at = ? WHERE id = ?",
         )
         .bind(&peer.address)
         .bind(peer.port as i32)
@@ -143,6 +163,9 @@ async fn handle_presence(state: &Arc<AppState>, packet: PresencePacket, address:
         .execute(state.database.pool())
         .await;
     }
+
+    // Keep the Copy UUID before moving the peer payload into Tauri's emitter.
+    let peer_id = peer.id;
 
     // Emit event to frontend
     if let Some(app_handle) = state.app_handle.read().await.as_ref() {

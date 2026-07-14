@@ -66,16 +66,16 @@ export const MessageItem = memo(function MessageItem({
   return (
     <div
       className={cn(
-        "message-container group flex gap-3 px-4 py-1.5",
-        "hover:bg-retro-bg-light/50",
+        "message-container group flex gap-3 px-4 py-2 sm:px-6",
         isOwn && "flex-row-reverse"
       )}
     >
       {/* Avatar */}
       <div className="w-10 shrink-0">
         {showAvatar ? (
-          <div className="flex h-9 w-9 items-center justify-center bg-retro-bg border border-retro-border font-pixel text-retro-text text-[0.55rem]">
+          <div className="message-avatar">
             {message.sender.username.slice(0, 2).toUpperCase()}
+            <i />
           </div>
         ) : null}
       </div>
@@ -116,8 +116,8 @@ export const MessageItem = memo(function MessageItem({
         {message.content ? (
           <div
             className={cn(
-              "text-sm text-retro-text font-terminal leading-relaxed",
-              isOwn && "text-right"
+              "message-bubble text-sm text-retro-text font-terminal leading-relaxed",
+              isOwn && "is-own text-left"
             )}
           >
             <MessageContent

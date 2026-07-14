@@ -1,41 +1,58 @@
-/**
- * Application header with title and connection status.
- */
-
+/** Application title bar and live transport status. */
+import { Wifi, WifiOff } from "lucide-react";
 import {
   selectConnectedPeerCount,
   useNetworkStore,
 } from "@/shared/stores/network-store";
-import { cn } from "@/utils/cn";
 
 export function AppHeader() {
   const connectedPeers = useNetworkStore(selectConnectedPeerCount);
   const connectionStatus = useNetworkStore((state) => state.connectionStatus);
-
-  const statusColor =
-    connectionStatus === "connected"
-      ? "bg-retro-green"
-      : connectionStatus === "connecting"
-        ? "bg-retro-amber animate-blink"
-        : "bg-retro-text-dim";
+  const isOnline = connectedPeers > 0 || connectionStatus === "connected";
 
   return (
-    <header className="flex h-12 items-center justify-between border-retro-border border-b-2 bg-retro-bg-light px-4">
-      <div className="flex items-center gap-3">
-        <h1 className="font-pixel text-retro-green text-xs tracking-wider">
-          LAN CHAT
-        </h1>
-        <span className="hidden font-terminal text-retro-text-dim text-sm sm:inline">
-          Offline P2P v0.1.0
-        </span>
+    <header className="app-titlebar">
+      <div className="flex min-w-0 items-center gap-3">
+        <div aria-hidden="true" className="brand-pixel">
+          <span />
+          <span />
+          <span />
+        </div>
+        <div className="min-w-0">
+          <h1 className="truncate font-pixel text-[0.7rem] text-retro-green tracking-[0.16em]">
+            ZENPAWS // LINK
+          </h1>
+          <p className="hidden text-[0.7rem] text-retro-text-dim uppercase tracking-[0.18em] sm:block">
+            local mesh terminal
+          </p>
+        </div>
       </div>
 
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <span className={cn("status-dot", statusColor)} />
-          <span className="font-terminal text-retro-text text-sm">
-            {connectedPeers} ONLINE
+      <div className="flex items-center gap-2">
+        <div className="titlebar-chip hidden md:flex">
+          <span className="text-retro-cyan">ROOM</span>
+          <span>#LOBBY-01</span>
+        </div>
+        <div
+          aria-label={`${connectedPeers} peers online`}
+          className="titlebar-chip"
+          role="status"
+        >
+          {isOnline ? (
+            <Wifi className="h-3.5 w-3.5 text-retro-green" />
+          ) : (
+            <WifiOff className="h-3.5 w-3.5 text-retro-text-dim" />
+          )}
+          <span
+            className={isOnline ? "text-retro-green" : "text-retro-text-dim"}
+          >
+            {connectedPeers.toString().padStart(2, "0")} ONLINE
           </span>
+        </div>
+        <div aria-hidden="true" className="window-controls">
+          <i />
+          <i />
+          <i />
         </div>
       </div>
     </header>

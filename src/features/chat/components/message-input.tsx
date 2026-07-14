@@ -145,7 +145,7 @@ export function MessageInput({
   }, []);
 
   return (
-    <div className="border-retro-border border-t-2 bg-retro-bg-light p-4">
+    <div className="composer-shell">
       {/* Reply preview */}
       {replyToMessage ? (
         <div className="mb-3 flex items-center gap-2 border border-retro-border bg-retro-bg px-3 py-2">
@@ -191,7 +191,8 @@ export function MessageInput({
       ) : null}
 
       {/* Input area */}
-      <div className="flex items-end gap-2">
+      <div className="composer-bar">
+        <span className="hidden font-pixel text-[0.55rem] text-retro-green md:block">&gt;_</span>
         <button
           className={cn(
             "retro-button h-10 w-10 p-0",
@@ -207,7 +208,7 @@ export function MessageInput({
 
         <div className="relative flex-1">
           <textarea
-            className="retro-input min-h-[44px] resize-none"
+            className="composer-input min-h-[44px] resize-none"
             disabled={disabled}
             onChange={handleChange}
             onKeyDown={handleKeyDown}

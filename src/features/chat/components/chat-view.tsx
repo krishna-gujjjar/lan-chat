@@ -40,13 +40,15 @@ export function ChatView() {
 
   const handleSend = useCallback(
     async (content: string, replyToId?: UUID, attachmentIds?: UUID[]) => {
-      if (!currentUser) return;
+      if (!currentUser) {
+        return;
+      }
       try {
         const message = await invokeOrThrow("send_message", {
-          content,
-          replyToId: replyToId ?? undefined,
           attachmentIds,
+          content,
           mentionedUserIds: undefined,
+          replyToId: replyToId ?? undefined,
         });
         addMessage(message);
       } catch (e) {
@@ -56,20 +58,27 @@ export function ChatView() {
     [currentUser, addMessage]
   );
 
-  const handleTyping = useCallback(async (isTyping: boolean) => {
-    if (!currentUser) return;
-    try {
-      // Broadcast typing via network layer (handled in Rust when we add typing command)
-      // For now we skip since there's no direct command for typing
-      console.log("Typing:", isTyping);
-    } catch (e) {
-      console.error("Typing error:", e);
-    }
-  }, [currentUser]);
+  const handleTyping = useCallback(
+    async (isTyping: boolean) => {
+      if (!currentUser) {
+        return;
+      }
+      try {
+        // Broadcast typing via network layer (handled in Rust when we add typing command)
+        // For now we skip since there's no direct command for typing
+        console.log("Typing:", isTyping);
+      } catch (e) {
+        console.error("Typing error:", e);
+      }
+    },
+    [currentUser]
+  );
 
   const handleAttach = useCallback(
     async (filePaths: string[]) => {
-      if (!currentUser || filePaths.length === 0) return [];
+      if (!currentUser || filePaths.length === 0) {
+        return [];
+      }
       try {
         const attachments = await invokeOrThrow("upload_files", {
           filePaths,
@@ -84,13 +93,15 @@ export function ChatView() {
   );
 
   const handleLoadMore = useCallback(async () => {
-    if (!hasMore || isLoadingMore || messages.length === 0) return;
+    if (!hasMore || isLoadingMore || messages.length === 0) {
+      return;
+    }
     setLoadingMore(true);
     try {
       const oldestMessage = messages[0];
       const result = await invokeOrThrow("get_messages", {
-        limit: 50,
         before: oldestMessage.id,
+        limit: 50,
       });
       prependMessages([...result.items]);
     } catch (e) {
@@ -130,8 +141,8 @@ export function ChatView() {
     async (messageId: UUID, emoji: string) => {
       try {
         const reaction = await invokeOrThrow("add_reaction", {
-          messageId,
           emoji,
+          messageId,
         });
         addReaction(messageId, reaction);
       } catch (e) {
@@ -142,7 +153,20 @@ export function ChatView() {
   );
 
   return (
-    <div className="flex h-full flex-col bg-retro-bg">
+    <div className="chat-stage">
+      <div className="room-banner">
+        <div>
+          <p className="font-pixel text-[0.68rem] text-retro-text tracking-wider">
+            # COMMON ROOM
+          </p>
+          <p className="mt-1 text-retro-text-dim text-xs uppercase tracking-[0.16em]">
+            Unencrypted local broadcast · messages stay on your devices
+          </p>
+        </div>
+        <div className="hidden items-center gap-2 text-retro-green text-xs sm:flex">
+          <span className="status-pulse" /> LIVE CHANNEL
+        </div>
+      </div>
       <MessageList
         onDelete={handleDelete}
         onEdit={handleEdit}
