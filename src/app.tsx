@@ -3,6 +3,7 @@
  * Entry point for the LAN Chat desktop application.
  */
 
+import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 import { useEffect, useState } from "react";
 import { AppLayout } from "@/app/layout/app-layout";
 import { AppProviders } from "@/app/providers/app-providers";
@@ -28,6 +29,9 @@ function AppContent() {
   useEffect(() => {
     async function init() {
       try {
+        if (!(await isPermissionGranted())) {
+          await requestPermission();
+        }
         const user = await invokeOrThrow("get_current_user");
         if (user) {
           setCurrentUser(user);

@@ -8,6 +8,7 @@ use sha2::{Digest, Sha256};
 use sqlx::Row;
 use std::sync::Arc;
 use tauri::Emitter;
+use tauri_plugin_notification::NotificationExt;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{timeout, Duration};
@@ -262,6 +263,18 @@ async fn handle_network_packet(
                     // the same packet to be delivered more than once.
                     if result.rows_affected() == 1 {
                         if let Some(app_handle) = state.app_handle.read().await.as_ref() {
+                            let body = msg
+                                .message
+                                .content
+                                .as_deref()
+                                .filter(|value| !value.is_empty())
+                                .unwrap_or("Sent an attachment");
+                            let _ = app_handle
+                                .notification()
+                                .builder()
+                                .title(format!("New message from {}", msg.sender.username))
+                                .body(body)
+                                .show();
                             let _ = app_handle.emit("message:created", msg);
                         }
                     }
@@ -854,6 +867,7 @@ async fn finalize_attachment_download(
         .downloads_dir()
         .join(format!("{}-{safe_name}", chunk.attachment_id));
     tokio::fs::rename(part_path, &destination).await?;
+    tracing::info!(attachment_id = %chunk.attachment_id, path = %destination.display(), "attachment download completed");
     let now = chrono::Utc::now().to_rfc3339();
     sqlx::query("UPDATE downloads SET status = 'completed', progress_bytes = ?, local_path = ?, completed_at = ?, updated_at = ? WHERE id = ?")
         .bind(chunk.total_bytes).bind(destination.to_string_lossy().to_string())

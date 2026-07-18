@@ -12,6 +12,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { invokeOrThrow } from "@/shared/lib/tauri/invoke";
 import { useMessageStore } from "@/shared/stores/message-store";
 import type { UUID } from "@/shared/types/common";
 import { cn } from "@/utils/cn";
@@ -187,8 +188,19 @@ export function MessageInput({
     event.stopPropagation();
     setIsDragging(false);
     const uriList = event.dataTransfer.getData("text/uri-list");
+    const html = event.dataTransfer.getData("text/html");
     const plain = event.dataTransfer.getData("text/plain");
-    const url = (uriList || plain).split(/\r?\n/).find((value) => /^https?:\/\//i.test(value.trim()))?.trim();
+    const draggedImage = html
+      ? new DOMParser().parseFromString(html, "text/html").querySelector("img")
+      : null;
+    const imageSource = draggedImage?.getAttribute("data-original")
+      ?? draggedImage?.getAttribute("data-src")
+      ?? draggedImage?.getAttribute("src")
+      ?? undefined;
+    const url = (imageSource || uriList || plain)
+      .split(/\r?\n/)
+      .find((value) => /^https?:\/\//i.test(value.trim()))
+      ?.trim();
     if (!url) return;
     setIsUploading(true);
     const id = await onImportImageUrl(url);
@@ -250,18 +262,11 @@ export function MessageInput({
       {attachments.length > 0 ? (
         <div className="mb-3 flex flex-wrap gap-2">
           {attachments.map((id) => (
-            <div
-              className="retro-chip border-retro-green-dim text-retro-green"
+            <PendingAttachment
+              id={id}
               key={id}
-            >
-              <span>FILE</span>
-              <button
-                className="ml-1 text-retro-text-dim hover:text-retro-red"
-                onClick={() => removeAttachment(id)}
-              >
-                ×
-              </button>
-            </div>
+              onRemove={() => removeAttachment(id)}
+            />
           ))}
         </div>
       ) : null}
@@ -313,6 +318,22 @@ export function MessageInput({
       <p className="mt-2 font-terminal text-retro-text-dim text-xs">
         ENTER to send | SHIFT+ENTER for new line
       </p>
+    </div>
+  );
+}
+function PendingAttachment({ id, onRemove }: { readonly id: UUID; readonly onRemove: () => void }) {
+  const [preview, setPreview] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    void invokeOrThrow("get_attachment_preview", { attachmentId: id })
+      .then((value) => { if (active) setPreview(value); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [id]);
+  return (
+    <div className="relative overflow-hidden border border-retro-green-dim bg-retro-bg text-retro-green">
+      {preview ? <img alt="Pending upload" className="h-24 w-32 object-contain [image-rendering:auto]" src={preview} /> : <span className="block px-3 py-2 text-xs">FILE READY</span>}
+      <button aria-label="Remove attachment" className="absolute right-1 top-1 bg-retro-bg px-1 text-retro-text hover:text-retro-red" onClick={onRemove} type="button">×</button>
     </div>
   );
 }

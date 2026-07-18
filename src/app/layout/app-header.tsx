@@ -1,4 +1,5 @@
 /** Application title bar and live transport status. */
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Bug, Wifi, WifiOff } from "lucide-react";
 import {
   selectConnectedPeerCount,
@@ -48,10 +49,10 @@ export function AppHeader({ onDebug }: { readonly onDebug: () => void }) {
           </span>
         </div>
         <button className="icon-button" onClick={onDebug} title="Network debugger" type="button"><Bug className="h-4 w-4" /></button>
-        <div aria-hidden="true" className="window-controls">
-          <i />
-          <i />
-          <i />
+        <div className="window-controls" aria-label="Window controls">
+          <button aria-label="Minimize" onClick={() => void getCurrentWindow().minimize()} type="button" />
+          <button aria-label="Toggle maximize" onClick={() => void getCurrentWindow().toggleMaximize()} type="button" />
+          <button aria-label="Close" onClick={() => void getCurrentWindow().close()} type="button" />
         </div>
       </div>
     </header>
