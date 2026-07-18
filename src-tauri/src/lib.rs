@@ -94,6 +94,7 @@ pub fn run() {
             commands::network::get_peers,
             commands::network::start_discovery,
             commands::network::stop_discovery,
+            commands::diagnostics::run_network_diagnostics,
             // App commands
             commands::app::initialize_app,
             commands::app::get_app_data_dir,

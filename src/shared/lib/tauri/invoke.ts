@@ -16,6 +16,7 @@ import type {
   MessageWithDetails,
   Reaction,
 } from "@/shared/types/message";
+import type { NetworkDiagnosticReport } from "@/shared/types/diagnostics";
 import type { NetworkStats, Peer } from "@/shared/types/network";
 import type { AppSettings, UpdateSettingsInput } from "@/shared/types/settings";
 import type { UpdateUserInput, User } from "@/shared/types/user";
@@ -80,6 +81,7 @@ interface TauriCommands {
   pause_download: { input: { downloadId: UUID }; output: Download };
   pick_download_folder: { input: undefined; output: string | null };
   remove_reaction: { input: { reactionId: UUID }; output: void };
+  run_network_diagnostics: { input: undefined; output: NetworkDiagnosticReport };
   resume_download: { input: { downloadId: UUID }; output: Download };
   save_file_as: {
     input: { attachmentId: UUID; destinationPath: string };

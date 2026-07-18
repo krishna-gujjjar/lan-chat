@@ -1,6 +1,7 @@
 //! UDP-based LAN peer discovery.
 
 use crate::models::Peer;
+use crate::network::local_address::local_ipv4;
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
@@ -52,7 +53,17 @@ pub async fn start_discovery_service(
     let username = local_user.username.clone();
     tokio::spawn(async move {
         let mut ticker = interval(Duration::from_secs(DISCOVERY_INTERVAL_SECS));
-        let broadcast_addr = SocketAddr::from(([255, 255, 255, 255], DISCOVERY_PORT));
+        let mut broadcast_addresses =
+            vec![SocketAddr::from(([255, 255, 255, 255], DISCOVERY_PORT))];
+        // macOS and some routers do not route the limited broadcast address to
+        // Wi-Fi/Ethernet peers. Also announce to the active /24 subnet broadcast.
+        if let Some(address) = local_ipv4().await {
+            let octets = address.octets();
+            let subnet = SocketAddr::from(([octets[0], octets[1], octets[2], 255], DISCOVERY_PORT));
+            if !broadcast_addresses.contains(&subnet) {
+                broadcast_addresses.push(subnet);
+            }
+        }
         let packet = PresencePacket {
             packet_type: "presence".to_string(),
             user_id: user_id.clone(),
@@ -66,7 +77,11 @@ pub async fn start_discovery_service(
 
         loop {
             ticker.tick().await;
-            let _ = broadcast_socket.send_to(&json, broadcast_addr).await;
+            for address in &broadcast_addresses {
+                if let Err(error) = broadcast_socket.send_to(&json, address).await {
+                    tracing::warn!(%address, %error, "failed to broadcast presence");
+                }
+            }
         }
     });
 
@@ -113,6 +128,7 @@ async fn handle_presence(state: &Arc<AppState>, packet: PresencePacket, address:
 
     // Upsert peer
     let mut peer = Peer::new(user_id, packet.username, address, packet.port);
+    peer.last_seen_at = Some(chrono::Utc::now());
 
     let existing = sqlx::query("SELECT id, is_connected, created_at FROM peers WHERE user_id = ?")
         .bind(user_id.to_string())
@@ -169,7 +185,7 @@ async fn handle_presence(state: &Arc<AppState>, packet: PresencePacket, address:
 
     // Emit event to frontend
     if let Some(app_handle) = state.app_handle.read().await.as_ref() {
-        let _ = app_handle.emit("peer:discovered", peer);
+        let _ = app_handle.emit("peer:discovered", peer.clone());
     }
 
     // Try to connect
