@@ -188,6 +188,23 @@ async fn handle_presence(state: &Arc<AppState>, packet: PresencePacket, address:
         let _ = app_handle.emit("peer:discovered", peer.clone());
     }
 
-    // Try to connect
-    let _ = crate::network::peer_connection::connect_to_peer(state.clone(), peer_id).await;
+    // Connection lifetime is long-running; never block the UDP discovery loop
+    // or open a fresh probe for every three-second presence packet.
+    if !peer.is_connected {
+        // Reserve the attempt before spawning so duplicate broadcasts received in
+        // the same millisecond cannot create parallel TCP connections.
+        let _ = sqlx::query("UPDATE peers SET is_connected = 1, updated_at = ? WHERE id = ?")
+            .bind(chrono::Utc::now().to_rfc3339())
+            .bind(peer_id.to_string())
+            .execute(state.database.pool())
+            .await;
+        let connection_state = state.clone();
+        tokio::spawn(async move {
+            if let Err(error) =
+                crate::network::peer_connection::connect_to_peer(connection_state, peer_id).await
+            {
+                tracing::warn!(%error, %peer_id, "peer connection task ended with error");
+            }
+        });
+    }
 }

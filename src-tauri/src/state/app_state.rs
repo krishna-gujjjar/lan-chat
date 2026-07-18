@@ -4,9 +4,12 @@ use crate::database::Database;
 use crate::errors::AppResult;
 use crate::models::{AppSettings, User};
 use crate::services::{SettingsService, UserService};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::AppHandle;
+use tokio::net::tcp::OwnedWriteHalf;
+use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 
 /// Global application state shared across all commands.
@@ -26,6 +29,8 @@ pub struct AppState {
     pub app_handle: RwLock<Option<AppHandle>>,
     /// Local TCP port for peer connections
     pub local_tcp_port: RwLock<Option<u16>>,
+    /// Persistent bidirectional streams, keyed by stable remote user identity.
+    pub peer_writers: RwLock<HashMap<uuid::Uuid, Arc<Mutex<OwnedWriteHalf>>>>,
 }
 
 impl AppState {
@@ -62,6 +67,7 @@ impl AppState {
             settings_service,
             app_handle: RwLock::new(Some(handle.clone())),
             local_tcp_port: RwLock::new(None),
+            peer_writers: RwLock::new(HashMap::new()),
         })
     }
 

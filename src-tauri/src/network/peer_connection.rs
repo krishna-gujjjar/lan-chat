@@ -90,13 +90,16 @@ pub async fn start_tcp_listener(
 
 async fn handle_peer_stream(
     state: Arc<AppState>,
-    mut stream: TcpStream,
+    stream: TcpStream,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let (mut reader, writer) = stream.into_split();
+    let writer = Arc::new(tokio::sync::Mutex::new(writer));
+    let mut registered_user = None;
     let mut buf = vec![0u8; 4096];
     let mut accumulated = Vec::new();
 
     loop {
-        match stream.read(&mut buf).await {
+        match reader.read(&mut buf).await {
             Ok(0) => {
                 tracing::info!("Peer disconnected");
                 break;
@@ -125,6 +128,23 @@ async fn handle_peer_stream(
 
                     match serde_json::from_slice::<NetworkPacket>(&json_bytes) {
                         Ok(packet) => {
+                            if registered_user.is_none() {
+                                if let Ok(user_id) = Uuid::parse_str(&packet.sender_id) {
+                                    state
+                                        .peer_writers
+                                        .write()
+                                        .await
+                                        .insert(user_id, writer.clone());
+                                    registered_user = Some(user_id);
+                                    let _ = sqlx::query("UPDATE peers SET is_connected = 1, last_seen_at = ?, updated_at = ? WHERE user_id = ?")
+                                        .bind(chrono::Utc::now().to_rfc3339())
+                                        .bind(chrono::Utc::now().to_rfc3339())
+                                        .bind(user_id.to_string())
+                                        .execute(state.database.pool())
+                                        .await;
+                                    tracing::info!(%user_id, "registered bidirectional peer stream");
+                                }
+                            }
                             if let Err(error) = handle_network_packet(&state, packet).await {
                                 tracing::error!(%error, "failed to persist network packet");
                             }
@@ -142,6 +162,14 @@ async fn handle_peer_stream(
         }
     }
 
+    if let Some(user_id) = registered_user {
+        state.peer_writers.write().await.remove(&user_id);
+        let _ = sqlx::query("UPDATE peers SET is_connected = 0, updated_at = ? WHERE user_id = ?")
+            .bind(chrono::Utc::now().to_rfc3339())
+            .bind(user_id.to_string())
+            .execute(state.database.pool())
+            .await;
+    }
     Ok(())
 }
 
@@ -257,9 +285,6 @@ pub async fn connect_to_peer(
                 let _ = send_packet_to_stream(&mut stream, &packet).await;
             }
 
-            // Keep connection alive briefly then let it drop
-            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
             if let Some(app_handle) = state.app_handle.read().await.as_ref() {
                 if let Ok(Some(peer)) =
                     crate::services::get_peer_by_id(state.database.clone(), peer_id).await
@@ -268,17 +293,30 @@ pub async fn connect_to_peer(
                 }
             }
 
-            Ok(())
+            // Keep this socket alive. The receiver registers its write half by
+            // sender UUID and can reply over the same connection even when its
+            // OS cannot establish a reverse TCP route (common with Wi-Fi firewalls).
+            handle_peer_stream(state, stream).await
         }
         Ok(Err(e)) => {
+            mark_peer_disconnected(&state, &id).await;
             tracing::warn!("Failed to connect to peer {}: {}", addr, e);
             Ok(())
         }
         Err(_) => {
+            mark_peer_disconnected(&state, &id).await;
             tracing::warn!("Connection timeout to peer {}", addr);
             Ok(())
         }
     }
+}
+
+async fn mark_peer_disconnected(state: &Arc<AppState>, peer_id: &str) {
+    let _ = sqlx::query("UPDATE peers SET is_connected = 0, updated_at = ? WHERE id = ?")
+        .bind(chrono::Utc::now().to_rfc3339())
+        .bind(peer_id)
+        .execute(state.database.pool())
+        .await;
 }
 
 async fn send_packet_to_stream(
@@ -321,15 +359,31 @@ pub async fn broadcast_message(
     data.extend_from_slice(&json);
 
     // Get all peers and try to send
-    let rows =
-        sqlx::query("SELECT address, port FROM peers WHERE is_connected = 1 OR is_connected = 0")
-            .fetch_all(state.database.pool())
-            .await?;
+    let rows = sqlx::query("SELECT user_id, address, port FROM peers")
+        .fetch_all(state.database.pool())
+        .await?;
 
     for row in rows {
+        let user_id = Uuid::parse_str(&row.try_get::<String, _>("user_id")?)?;
         let address: String = row.try_get("address")?;
         let port: i32 = row.try_get("port")?;
         let addr = format!("{}:{}", address, port);
+
+        let persistent_writer = state.peer_writers.read().await.get(&user_id).cloned();
+        if let Some(writer) = persistent_writer {
+            let result = timeout(WRITE_TIMEOUT, async {
+                let mut stream = writer.lock().await;
+                stream.write_all(&data).await?;
+                stream.flush().await
+            })
+            .await;
+            if matches!(result, Ok(Ok(()))) {
+                tracing::info!(peer = %addr, message_id = %message.message.id, "message delivered over persistent peer stream");
+                continue;
+            }
+            state.peer_writers.write().await.remove(&user_id);
+            tracing::warn!(peer = %addr, "persistent stream failed; trying direct connection");
+        }
 
         match timeout(CONNECT_TIMEOUT, TcpStream::connect(&addr)).await {
             Ok(Ok(mut stream)) => {
@@ -376,10 +430,9 @@ pub async fn broadcast_typing(
     data.extend_from_slice(&len);
     data.extend_from_slice(&json);
 
-    let rows =
-        sqlx::query("SELECT address, port FROM peers WHERE is_connected = 1 OR is_connected = 0")
-            .fetch_all(state.database.pool())
-            .await?;
+    let rows = sqlx::query("SELECT user_id, address, port FROM peers")
+        .fetch_all(state.database.pool())
+        .await?;
 
     for row in rows {
         let address: String = row.try_get("address")?;
