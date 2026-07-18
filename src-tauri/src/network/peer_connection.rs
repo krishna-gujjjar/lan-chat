@@ -2,11 +2,13 @@
 
 use crate::models::{MessageWithDetails, TypingIndicator};
 use crate::state::AppState;
+use base64::Engine;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use sqlx::Row;
 use std::sync::Arc;
 use tauri::Emitter;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{timeout, Duration};
 use uuid::Uuid;
@@ -36,6 +38,27 @@ struct NetworkPacket {
     sender_id: String,
     payload: serde_json::Value,
     timestamp: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FileRequestPayload {
+    attachment_id: Uuid,
+    download_id: Uuid,
+    requester_id: Uuid,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FileChunkPayload {
+    attachment_id: Uuid,
+    checksum: String,
+    chunk_index: u64,
+    data: String,
+    download_id: Uuid,
+    receiver_id: Uuid,
+    total_bytes: i64,
+    total_chunks: u64,
 }
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
@@ -294,6 +317,19 @@ async fn handle_network_packet(
                     serde_json::json!({"messageId": message_id}),
                 );
             }
+        }
+        NetworkMessageType::FileRequest => {
+            let request = serde_json::from_value::<FileRequestPayload>(packet.payload)?;
+            let transfer_state = state.clone();
+            tokio::spawn(async move {
+                if let Err(error) = send_attachment_chunks(transfer_state, request).await {
+                    tracing::error!(%error, "attachment upload failed");
+                }
+            });
+        }
+        NetworkMessageType::FileChunk => {
+            let chunk = serde_json::from_value::<FileChunkPayload>(packet.payload)?;
+            receive_attachment_chunk(state, chunk).await?;
         }
         NetworkMessageType::Reaction => {
             let reaction = serde_json::from_value::<crate::models::Reaction>(packet.payload)?;
@@ -642,4 +678,192 @@ async fn remove_writer_if_current(
     if is_current {
         writers.remove(&user_id);
     }
+}
+
+const FILE_CHUNK_BYTES: usize = 192 * 1024;
+
+pub async fn request_attachment(
+    state: Arc<AppState>,
+    download_id: Uuid,
+    attachment_id: Uuid,
+    requester_id: Uuid,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let payload = FileRequestPayload {
+        attachment_id,
+        download_id,
+        requester_id,
+    };
+    broadcast_control_packet(
+        state,
+        NetworkMessageType::FileRequest,
+        requester_id,
+        serde_json::to_value(payload)?,
+    )
+    .await
+}
+
+async fn send_attachment_chunks(
+    state: Arc<AppState>,
+    request: FileRequestPayload,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let row = sqlx::query(
+        "SELECT stored_filename, is_image, size_bytes, checksum FROM attachments WHERE id = ?",
+    )
+    .bind(request.attachment_id.to_string())
+    .fetch_optional(state.database.pool())
+    .await?;
+    let Some(row) = row else {
+        return Ok(());
+    };
+    let stored_filename: String = row.try_get("stored_filename")?;
+    let is_image = row.try_get::<i32, _>("is_image")? == 1;
+    let size_bytes: i64 = row.try_get("size_bytes")?;
+    let checksum: String = row.try_get("checksum")?;
+    let folder = if is_image { "images" } else { "files" };
+    let path = state.uploads_dir().join(folder).join(stored_filename);
+    if !path.is_file() {
+        return Ok(());
+    }
+
+    let mut file = tokio::fs::File::open(path).await?;
+    let total_chunks =
+        ((size_bytes.max(0) as usize + FILE_CHUNK_BYTES - 1) / FILE_CHUNK_BYTES) as u64;
+    let sender_id = state
+        .current_user
+        .read()
+        .await
+        .as_ref()
+        .ok_or("No current user")?
+        .id;
+    let mut buffer = vec![0_u8; FILE_CHUNK_BYTES];
+    for chunk_index in 0..total_chunks {
+        let count = file.read(&mut buffer).await?;
+        if count == 0 {
+            break;
+        }
+        let payload = FileChunkPayload {
+            attachment_id: request.attachment_id,
+            checksum: checksum.clone(),
+            chunk_index,
+            data: base64::engine::general_purpose::STANDARD.encode(&buffer[..count]),
+            download_id: request.download_id,
+            receiver_id: request.requester_id,
+            total_bytes: size_bytes,
+            total_chunks,
+        };
+        broadcast_control_packet(
+            state.clone(),
+            NetworkMessageType::FileChunk,
+            sender_id,
+            serde_json::to_value(payload)?,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+async fn receive_attachment_chunk(
+    state: &Arc<AppState>,
+    chunk: FileChunkPayload,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let local_id = state
+        .current_user
+        .read()
+        .await
+        .as_ref()
+        .ok_or("No current user")?
+        .id;
+    if chunk.receiver_id != local_id {
+        return Ok(());
+    }
+    let bytes = base64::engine::general_purpose::STANDARD.decode(&chunk.data)?;
+    let part_path = state.temp_dir().join(format!("{}.part", chunk.download_id));
+    let mut file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .open(&part_path)
+        .await?;
+    file.seek(std::io::SeekFrom::Start(
+        chunk.chunk_index * FILE_CHUNK_BYTES as u64,
+    ))
+    .await?;
+    file.write_all(&bytes).await?;
+    file.flush().await?;
+    let downloaded = ((chunk.chunk_index * FILE_CHUNK_BYTES as u64) + bytes.len() as u64)
+        .min(chunk.total_bytes.max(0) as u64) as i64;
+    sqlx::query("UPDATE downloads SET progress_bytes = ?, updated_at = ? WHERE id = ?")
+        .bind(downloaded)
+        .bind(chrono::Utc::now().to_rfc3339())
+        .bind(chunk.download_id.to_string())
+        .execute(state.database.pool())
+        .await?;
+    if let Some(app) = state.app_handle.read().await.as_ref() {
+        let percentage = if chunk.total_bytes > 0 {
+            downloaded as f64 * 100.0 / chunk.total_bytes as f64
+        } else {
+            100.0
+        };
+        let _ = app.emit(
+            "download:progress",
+            serde_json::json!({
+                "downloadId": chunk.download_id, "attachmentId": chunk.attachment_id,
+                "bytesDownloaded": downloaded, "totalBytes": chunk.total_bytes,
+                "percentage": percentage, "bytesPerSecond": 0.0, "estimatedTimeRemaining": null
+            }),
+        );
+    }
+    if chunk.chunk_index + 1 == chunk.total_chunks {
+        finalize_attachment_download(state, &chunk, &part_path).await?;
+    }
+    Ok(())
+}
+
+async fn finalize_attachment_download(
+    state: &Arc<AppState>,
+    chunk: &FileChunkPayload,
+    part_path: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let data = tokio::fs::read(part_path).await?;
+    let actual = hex::encode(Sha256::digest(&data));
+    if actual != chunk.checksum {
+        let _ = tokio::fs::remove_file(part_path).await;
+        return Err(format!(
+            "attachment checksum mismatch: expected {}, got {actual}",
+            chunk.checksum
+        )
+        .into());
+    }
+    let original: String =
+        sqlx::query_scalar("SELECT original_filename FROM attachments WHERE id = ?")
+            .bind(chunk.attachment_id.to_string())
+            .fetch_one(state.database.pool())
+            .await?;
+    let safe_name: String = original
+        .chars()
+        .map(|value| {
+            if value.is_alphanumeric() || matches!(value, '.' | '-' | '_' | ' ') {
+                value
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let destination = state
+        .downloads_dir()
+        .join(format!("{}-{safe_name}", chunk.attachment_id));
+    tokio::fs::rename(part_path, &destination).await?;
+    let now = chrono::Utc::now().to_rfc3339();
+    sqlx::query("UPDATE downloads SET status = 'completed', progress_bytes = ?, local_path = ?, completed_at = ?, updated_at = ? WHERE id = ?")
+        .bind(chunk.total_bytes).bind(destination.to_string_lossy().to_string())
+        .bind(&now).bind(&now).bind(chunk.download_id.to_string())
+        .execute(state.database.pool()).await?;
+    if let Some(app) = state.app_handle.read().await.as_ref() {
+        let _ = app.emit(
+            "download:completed",
+            serde_json::json!({
+                "downloadId": chunk.download_id, "localPath": destination.to_string_lossy()
+            }),
+        );
+    }
+    Ok(())
 }
