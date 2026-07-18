@@ -13,6 +13,8 @@ import { MessageList } from "./message-list";
 
 export function ChatView() {
   const setReplyTo = useMessageStore((state) => state.setReplyTo);
+  const error = useMessageStore((state) => state.error);
+  const setError = useMessageStore((state) => state.setError);
   const setEditingMessage = useMessageStore((state) => state.setEditingMessage);
   const addMessage = useMessageStore((state) => state.addMessage);
   const prependMessages = useMessageStore((state) => state.prependMessages);
@@ -40,45 +42,41 @@ export function ChatView() {
 
   const handleSend = useCallback(
     async (content: string, replyToId?: UUID, attachmentIds?: UUID[]) => {
-      if (!currentUser) {
-        return;
-      }
+      if (!currentUser) return;
       try {
+        setError(null);
         const message = await invokeOrThrow("send_message", {
-          attachmentIds,
-          content,
-          mentionedUserIds: undefined,
-          replyToId: replyToId ?? undefined,
+          input: {
+            content,
+            replyToId: replyToId ?? undefined,
+            attachmentIds,
+            mentionedUserIds: undefined,
+          },
         });
         addMessage(message);
-      } catch (e) {
-        console.error("Failed to send message:", e);
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : "Message could not be sent";
+        setError(message);
+        console.error("Failed to send message:", cause);
       }
     },
-    [currentUser, addMessage]
+    [currentUser, addMessage, setError]
   );
 
-  const handleTyping = useCallback(
-    async (isTyping: boolean) => {
-      if (!currentUser) {
-        return;
-      }
-      try {
-        // Broadcast typing via network layer (handled in Rust when we add typing command)
-        // For now we skip since there's no direct command for typing
-        console.log("Typing:", isTyping);
-      } catch (e) {
-        console.error("Typing error:", e);
-      }
-    },
-    [currentUser]
-  );
+  const handleTyping = useCallback(async (isTyping: boolean) => {
+    if (!currentUser) return;
+    try {
+      // Broadcast typing via network layer (handled in Rust when we add typing command)
+      // For now we skip since there's no direct command for typing
+      console.log("Typing:", isTyping);
+    } catch (e) {
+      console.error("Typing error:", e);
+    }
+  }, [currentUser]);
 
   const handleAttach = useCallback(
     async (filePaths: string[]) => {
-      if (!currentUser || filePaths.length === 0) {
-        return [];
-      }
+      if (!currentUser || filePaths.length === 0) return [];
       try {
         const attachments = await invokeOrThrow("upload_files", {
           filePaths,
@@ -93,15 +91,13 @@ export function ChatView() {
   );
 
   const handleLoadMore = useCallback(async () => {
-    if (!hasMore || isLoadingMore || messages.length === 0) {
-      return;
-    }
+    if (!hasMore || isLoadingMore || messages.length === 0) return;
     setLoadingMore(true);
     try {
       const oldestMessage = messages[0];
       const result = await invokeOrThrow("get_messages", {
-        before: oldestMessage.id,
         limit: 50,
+        before: oldestMessage.id,
       });
       prependMessages([...result.items]);
     } catch (e) {
@@ -141,8 +137,8 @@ export function ChatView() {
     async (messageId: UUID, emoji: string) => {
       try {
         const reaction = await invokeOrThrow("add_reaction", {
-          emoji,
           messageId,
+          emoji,
         });
         addReaction(messageId, reaction);
       } catch (e) {
@@ -156,17 +152,18 @@ export function ChatView() {
     <div className="chat-stage">
       <div className="room-banner">
         <div>
-          <p className="font-pixel text-[0.68rem] text-retro-text tracking-wider">
-            # COMMON ROOM
-          </p>
-          <p className="mt-1 text-retro-text-dim text-xs uppercase tracking-[0.16em]">
-            Unencrypted local broadcast · messages stay on your devices
-          </p>
+          <p className="font-pixel text-[0.68rem] tracking-wider text-retro-text"># COMMON ROOM</p>
+          <p className="mt-1 text-xs uppercase tracking-[0.16em] text-retro-text-dim">Unencrypted local broadcast · messages stay on your devices</p>
         </div>
-        <div className="hidden items-center gap-2 text-retro-green text-xs sm:flex">
+        <div className="hidden items-center gap-2 text-xs text-retro-green sm:flex">
           <span className="status-pulse" /> LIVE CHANNEL
         </div>
       </div>
+      {error ? (
+        <div className="border-b border-retro-red bg-retro-red/10 px-4 py-2 text-sm text-retro-red" role="alert">
+          SEND ERROR // {error}
+        </div>
+      ) : null}
       <MessageList
         onDelete={handleDelete}
         onEdit={handleEdit}

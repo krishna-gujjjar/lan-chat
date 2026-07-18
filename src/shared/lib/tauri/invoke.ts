@@ -86,12 +86,15 @@ interface TauriCommands {
     output: string;
   };
   search_messages: {
-    input: MessageSearchParams;
+    input: { params: MessageSearchParams };
     output: PaginatedResponse<MessageWithDetails>;
   };
 
-  // Message commands
-  send_message: { input: CreateMessageInput; output: MessageWithDetails };
+  // Struct command arguments must be nested under the Rust parameter name.
+  send_message: {
+    input: { input: CreateMessageInput };
+    output: MessageWithDetails;
+  };
   set_avatar: { input: { filePath: string }; output: User };
   set_download_location: { input: { path: string }; output: void };
   show_in_tray: { input: undefined; output: void };
@@ -104,8 +107,11 @@ interface TauriCommands {
   start_discovery: { input: undefined; output: void };
   start_download: { input: { attachmentId: UUID }; output: Download };
   stop_discovery: { input: undefined; output: void };
-  update_settings: { input: UpdateSettingsInput; output: AppSettings };
-  update_user: { input: UpdateUserInput; output: User };
+  update_settings: {
+    input: { input: UpdateSettingsInput };
+    output: AppSettings;
+  };
+  update_user: { input: { input: UpdateUserInput }; output: User };
 
   // Attachment commands
   upload_files: {

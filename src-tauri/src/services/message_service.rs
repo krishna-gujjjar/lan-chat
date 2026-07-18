@@ -256,7 +256,7 @@ impl MessageService {
     }
 
     /// Get full message details including sender, attachments, reactions.
-    async fn get_message_details(&self, message: Message) -> AppResult<MessageWithDetails> {
+    pub async fn get_message_details(&self, message: Message) -> AppResult<MessageWithDetails> {
         // Get sender
         let sender = self.get_user(message.sender_id).await?;
 

@@ -123,9 +123,14 @@ async fn handle_peer_stream(
                     let json_bytes = accumulated[4..4 + len].to_vec();
                     accumulated.drain(..4 + len);
 
-                    if let Ok(packet) = serde_json::from_slice::<NetworkPacket>(&json_bytes) {
-                        if let Err(e) = handle_network_packet(&state, packet).await {
-                            tracing::error!("Error handling packet: {}", e);
+                    match serde_json::from_slice::<NetworkPacket>(&json_bytes) {
+                        Ok(packet) => {
+                            if let Err(error) = handle_network_packet(&state, packet).await {
+                                tracing::error!(%error, "failed to persist network packet");
+                            }
+                        }
+                        Err(error) => {
+                            tracing::warn!(%error, "rejected malformed network packet");
                         }
                     }
                 }
@@ -146,15 +151,16 @@ async fn handle_network_packet(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match packet.packet_type {
         NetworkMessageType::ChatMessage => {
-            if let Ok(msg) = serde_json::from_value::<MessageWithDetails>(packet.payload) {
-                // A remote message must retain its original UUID and timestamps. Creating a
-                // new local Message here used to make replies, deduplication and attachments
-                // point at an ID that did not exist on the receiver.
-                state
-                    .user_service
-                    .upsert_remote_user(msg.sender.id, msg.sender.username.clone())
-                    .await?;
-                let result = sqlx::query(
+            match serde_json::from_value::<MessageWithDetails>(packet.payload) {
+                Ok(msg) => {
+                    // A remote message must retain its original UUID and timestamps. Creating a
+                    // new local Message here used to make replies, deduplication and attachments
+                    // point at an ID that did not exist on the receiver.
+                    state
+                        .user_service
+                        .upsert_remote_user(msg.sender.id, msg.sender.username.clone())
+                        .await?;
+                    let result = sqlx::query(
                     "INSERT OR IGNORE INTO messages (id, sender_id, content, reply_to_id, is_edited, is_deleted, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 )
                 .bind(msg.message.id.to_string())
@@ -169,12 +175,16 @@ async fn handle_network_packet(
                 .execute(state.database.pool())
                 .await?;
 
-                // Emit only once. UDP discovery and reconnects may legitimately cause
-                // the same packet to be delivered more than once.
-                if result.rows_affected() == 1 {
-                    if let Some(app_handle) = state.app_handle.read().await.as_ref() {
-                        let _ = app_handle.emit("message:created", msg);
+                    // Emit only once. UDP discovery and reconnects may legitimately cause
+                    // the same packet to be delivered more than once.
+                    if result.rows_affected() == 1 {
+                        if let Some(app_handle) = state.app_handle.read().await.as_ref() {
+                            let _ = app_handle.emit("message:created", msg);
+                        }
                     }
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "rejected invalid chat message payload");
                 }
             }
         }

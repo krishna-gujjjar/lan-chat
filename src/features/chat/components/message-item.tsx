@@ -224,20 +224,19 @@ interface MessageContentProps {
 }
 
 function MessageContent({ content, mentions }: MessageContentProps) {
-  let processedContent = content;
-  for (const mention of mentions) {
-    processedContent = processedContent.replace(
-      new RegExp(`@${mention.username}`, "g"),
-      `<span class="text-retro-cyan font-bold">@${mention.username}</span>`
-    );
-  }
-
+  const mentionTokens = new Set(mentions.map((item) => `@${item.username}`));
   return (
-    <span
-      dangerouslySetInnerHTML={{
-        __html: processedContent.replace(/\n/g, "<br/>"),
-      }}
-    />
+    <span className="whitespace-pre-wrap wrap-break-word">
+      {content.split(/(@[\p{L}\p{N}_.-]+|\n)/gu).map((part, index) =>
+        mentionTokens.has(part) ? (
+          <span className="font-bold text-retro-cyan" key={`${part}-${index}`}>
+            {part}
+          </span>
+        ) : (
+          part
+        )
+      )}
+    </span>
   );
 }
 

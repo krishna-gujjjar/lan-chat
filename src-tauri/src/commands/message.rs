@@ -27,17 +27,12 @@ pub async fn send_message(
         .await
         .map_err(|e| e.to_string())?;
 
-    // Get full message details
-    let messages = service
-        .get_messages(1, None)
+    // Resolve the exact row that was created. Querying the newest message was
+    // race-prone when local and remote messages arrived at the same time.
+    let msg_with_details = service
+        .get_message_details(message)
         .await
         .map_err(|e| e.to_string())?;
-
-    let msg_with_details = messages
-        .items
-        .into_iter()
-        .find(|m| m.message.id == message.id)
-        .ok_or_else(|| "Failed to retrieve created message".to_string())?;
 
     // Broadcast to peers
     let state_arc = state.inner().clone();

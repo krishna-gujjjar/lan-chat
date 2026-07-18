@@ -95,9 +95,10 @@ export const useMessageStore = create<MessageStore>()(
 
       addMessage: (message) => {
         set(
-          (state) => ({
-            messages: [...state.messages, message],
-          }),
+          (state) => {
+            const exists = state.messages.some((item) => item.id === message.id);
+            return exists ? state : { messages: [...state.messages, message] };
+          },
           false,
           "addMessage"
         );
