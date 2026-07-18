@@ -84,6 +84,8 @@ pub fn run() {
             // Attachment commands
             commands::attachment::upload_files,
             commands::attachment::paste_clipboard_image,
+            commands::attachment::get_attachment_preview,
+            commands::attachment::import_image_url,
             commands::attachment::start_download,
             commands::attachment::pause_download,
             commands::attachment::cancel_download,

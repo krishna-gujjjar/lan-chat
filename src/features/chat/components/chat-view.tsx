@@ -83,13 +83,25 @@ export function ChatView() {
           filePaths,
         });
         return attachments.map((a) => a.id);
-      } catch (e) {
-        console.error("Failed to upload files:", e);
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : "Files could not be attached";
+        setError(message);
+        console.error("Failed to upload files:", cause);
         return [];
       }
     },
-    [currentUser]
+    [currentUser, setError]
   );
+
+  const handleImportImageUrl = useCallback(async (url: string) => {
+    try {
+      const attachment = await invokeOrThrow("import_image_url", { url });
+      return attachment.id;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Dropped image could not be imported");
+      return null;
+    }
+  }, [setError]);
 
   const handlePasteImage = useCallback(async () => {
     try {
@@ -194,6 +206,7 @@ export function ChatView() {
       <MessageInput
         onAttach={handleAttach}
         onEdit={handleSaveEdit}
+        onImportImageUrl={handleImportImageUrl}
         onPasteImage={handlePasteImage}
         onSend={handleSend}
         onTyping={handleTyping}

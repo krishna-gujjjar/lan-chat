@@ -21,6 +21,7 @@ interface MessageInputProps {
   readonly onAttach: (filePaths: string[]) => Promise<UUID[]>;
   readonly onEdit: (messageId: UUID, content: string) => void;
   readonly onPasteImage: () => Promise<UUID | null>;
+  readonly onImportImageUrl: (url: string) => Promise<UUID | null>;
   readonly onSend: (
     content: string,
     replyToId?: UUID,
@@ -33,6 +34,7 @@ export function MessageInput({
   onSend,
   onEdit,
   onPasteImage,
+  onImportImageUrl,
   onTyping,
   onAttach,
   disabled = false,
@@ -180,6 +182,20 @@ export function MessageInput({
     }
   }, [onAttach]);
 
+  const handleBrowserDrop = useCallback(async (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDragging(false);
+    const uriList = event.dataTransfer.getData("text/uri-list");
+    const plain = event.dataTransfer.getData("text/plain");
+    const url = (uriList || plain).split(/\r?\n/).find((value) => /^https?:\/\//i.test(value.trim()))?.trim();
+    if (!url) return;
+    setIsUploading(true);
+    const id = await onImportImageUrl(url);
+    if (id) setAttachments((current) => [...current, id]);
+    setIsUploading(false);
+  }, [onImportImageUrl]);
+
   const handlePaste = useCallback(async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const hasImage = [...event.clipboardData.items].some((item) => item.type.startsWith("image/"));
     if (!hasImage) return;
@@ -199,7 +215,12 @@ export function MessageInput({
   }, []);
 
   return (
-    <div className={cn("composer-shell", isDragging && "ring-2 ring-inset ring-retro-green")}>
+    <div
+      className={cn("composer-shell", isDragging && "ring-2 ring-inset ring-retro-green")}
+      onDragEnter={(event) => { event.preventDefault(); setIsDragging(true); }}
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => void handleBrowserDrop(event)}
+    >
       {isDragging ? <div className="absolute inset-0 z-20 grid place-items-center bg-retro-bg/90 font-pixel text-xs text-retro-green">DROP FILES TO ATTACH</div> : null}
       {/* Reply preview */}
       {replyToMessage ? (

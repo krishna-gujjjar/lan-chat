@@ -58,6 +58,8 @@ hex = "0.4"
 base64 = "0.22"
 mime_guess = "2"
 image = "0.25"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+futures-util = "0.3"
 
 # Directories
 dirs = "6"

@@ -2,7 +2,8 @@
  * Single message display component.
  */
 
-import { memo, useCallback } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { memo, useCallback, useEffect, useState } from "react";
 import { invokeOrThrow } from "@/shared/lib/tauri/invoke";
 import type { UUID } from "@/shared/types/common";
 import type {
@@ -246,18 +247,38 @@ interface AttachmentListProps {
 }
 
 function AttachmentList({ attachments }: AttachmentListProps) {
+  const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [status, setStatus] = useState<Record<string, string>>({});
+  const loadPreviews = useCallback(async () => {
+    for (const attachment of attachments) {
+      if (!attachment.isImage) continue;
+      const preview = await invokeOrThrow("get_attachment_preview", { attachmentId: attachment.id }).catch(() => null);
+      if (preview) setPreviews((current) => ({ ...current, [attachment.id]: preview }));
+    }
+  }, [attachments]);
+  useEffect(() => {
+    void loadPreviews();
+    const disposers: Array<() => void> = [];
+    void listen<{ attachmentId: string; percentage: number }>("download:progress", ({ payload }) => {
+      setStatus((current) => ({ ...current, [payload.attachmentId]: `${Math.round(payload.percentage)}%` }));
+    }).then((dispose) => disposers.push(dispose));
+    void listen("download:completed", () => { void loadPreviews(); }).then((dispose) => disposers.push(dispose));
+    return () => disposers.forEach((dispose) => dispose());
+  }, [loadPreviews]);
+  const download = useCallback(async (attachment: Attachment) => {
+    setStatus((current) => ({ ...current, [attachment.id]: "REQUESTING" }));
+    try { await invokeOrThrow("start_download", { attachmentId: attachment.id }); }
+    catch (cause) { setStatus((current) => ({ ...current, [attachment.id]: cause instanceof Error ? "FAILED" : "FAILED" })); }
+  }, []);
   return (
-    <div className="inline-flex flex-wrap gap-2">
+    <div className="inline-flex max-w-full flex-wrap gap-2">
       {attachments.map((attachment) => (
-        <button
-          key={attachment.id}
-          className="retro-chip border-retro-border-light text-retro-text hover:border-retro-green"
-          onClick={() => void invokeOrThrow("start_download", { attachmentId: attachment.id })}
-          title="Download from sender"
-          type="button"
-        >
-          {attachment.isImage ? "🖼️" : "📎"} {attachment.originalFilename} · DOWNLOAD
-        </button>
+        <div className="max-w-sm border border-retro-border bg-retro-bg p-2 text-left" key={attachment.id}>
+          {previews[attachment.id] ? <img alt={attachment.originalFilename} className="mb-2 max-h-64 w-full object-contain [image-rendering:auto]" loading="lazy" src={previews[attachment.id]} /> : null}
+          <button className="retro-chip w-full border-retro-border-light text-retro-text hover:border-retro-green" onClick={() => void download(attachment)} title="Download from sender" type="button">
+            {attachment.isImage ? "🖼️" : "📎"} {attachment.originalFilename} · {status[attachment.id] ?? (previews[attachment.id] ? "SAVED" : "DOWNLOAD")}
+          </button>
+        </div>
       ))}
     </div>
   );

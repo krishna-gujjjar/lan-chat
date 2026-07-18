@@ -55,14 +55,29 @@ impl MessageService {
             }
         }
 
-        // Link attachments to this message
+        // Link staged attachments and remove their private draft parent rows.
         if let Some(attachment_ids) = input.attachment_ids {
+            let mut draft_ids = Vec::new();
             for att_id in attachment_ids {
+                if let Some(draft_id) = sqlx::query_scalar::<_, String>(
+                    "SELECT message_id FROM attachments WHERE id = ?",
+                )
+                .bind(att_id.to_string())
+                .fetch_optional(self.database.pool())
+                .await?
+                {
+                    draft_ids.push(draft_id);
+                }
                 sqlx::query("UPDATE attachments SET message_id = ? WHERE id = ?")
                     .bind(message.id.to_string())
                     .bind(att_id.to_string())
                     .execute(self.database.pool())
                     .await?;
+            }
+            for draft_id in draft_ids {
+                sqlx::query("DELETE FROM messages WHERE id = ? AND content = '__attachment_draft__' AND NOT EXISTS (SELECT 1 FROM attachments WHERE message_id = ?)")
+                    .bind(&draft_id).bind(&draft_id)
+                    .execute(self.database.pool()).await?;
             }
         }
 

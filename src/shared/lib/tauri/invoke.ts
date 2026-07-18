@@ -45,6 +45,8 @@ interface TauriCommands {
   get_all_users: { input: undefined; output: readonly User[] };
   get_app_data_dir: { input: undefined; output: string };
   get_attachment: { input: { attachmentId: UUID }; output: Attachment };
+  get_attachment_preview: { input: { attachmentId: UUID }; output: string | null };
+  import_image_url: { input: { url: string }; output: Attachment };
   // User commands
   get_current_user: { input: undefined; output: User | null };
   get_download_location: { input: undefined; output: string };

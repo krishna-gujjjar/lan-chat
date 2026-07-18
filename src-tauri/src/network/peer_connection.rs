@@ -693,6 +693,7 @@ pub async fn request_attachment(
         download_id,
         requester_id,
     };
+    tracing::info!(%attachment_id, %download_id, %requester_id, "requesting attachment from peers");
     broadcast_control_packet(
         state,
         NetworkMessageType::FileRequest,
@@ -725,6 +726,7 @@ async fn send_attachment_chunks(
         return Ok(());
     }
 
+    tracing::info!(attachment_id = %request.attachment_id, receiver_id = %request.requester_id, bytes = size_bytes, "starting attachment upload");
     let mut file = tokio::fs::File::open(path).await?;
     let total_chunks =
         ((size_bytes.max(0) as usize + FILE_CHUNK_BYTES - 1) / FILE_CHUNK_BYTES) as u64;
