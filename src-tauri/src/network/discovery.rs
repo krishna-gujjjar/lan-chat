@@ -53,17 +53,17 @@ pub async fn start_discovery_service(
     let username = local_user.username.clone();
     tokio::spawn(async move {
         let mut ticker = interval(Duration::from_secs(DISCOVERY_INTERVAL_SECS));
-        let mut broadcast_addresses =
-            vec![SocketAddr::from(([255, 255, 255, 255], DISCOVERY_PORT))];
-        // macOS and some routers do not route the limited broadcast address to
-        // Wi-Fi/Ethernet peers. Also announce to the active /24 subnet broadcast.
-        if let Some(address) = local_ipv4().await {
+        // Prefer the interface-directed broadcast. macOS may reject the limited
+        // 255.255.255.255 route with EHOSTUNREACH even while subnet broadcast works.
+        let broadcast_addresses = if let Some(address) = local_ipv4().await {
             let octets = address.octets();
-            let subnet = SocketAddr::from(([octets[0], octets[1], octets[2], 255], DISCOVERY_PORT));
-            if !broadcast_addresses.contains(&subnet) {
-                broadcast_addresses.push(subnet);
-            }
-        }
+            vec![SocketAddr::from((
+                [octets[0], octets[1], octets[2], 255],
+                DISCOVERY_PORT,
+            ))]
+        } else {
+            vec![SocketAddr::from(([255, 255, 255, 255], DISCOVERY_PORT))]
+        };
         let packet = PresencePacket {
             packet_type: "presence".to_string(),
             user_id: user_id.clone(),

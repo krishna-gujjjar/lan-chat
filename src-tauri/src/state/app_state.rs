@@ -42,6 +42,11 @@ impl AppState {
         // Initialize database
         let db_path = app_data_dir.join("database").join("chat.db");
         let database = Arc::new(Database::new(&db_path).await?);
+        // Connection flags describe live process-owned sockets and must never
+        // survive an application restart.
+        sqlx::query("UPDATE peers SET is_connected = 0")
+            .execute(database.pool())
+            .await?;
 
         // Initialize services
         let user_service = Arc::new(UserService::new(database.clone()));
