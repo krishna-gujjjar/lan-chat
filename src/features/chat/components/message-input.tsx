@@ -2,6 +2,7 @@
  * Message input component with attachment support.
  */
 
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   type KeyboardEvent,
@@ -19,6 +20,7 @@ interface MessageInputProps {
   readonly disabled?: boolean;
   readonly onAttach: (filePaths: string[]) => Promise<UUID[]>;
   readonly onEdit: (messageId: UUID, content: string) => void;
+  readonly onPasteImage: () => Promise<UUID | null>;
   readonly onSend: (
     content: string,
     replyToId?: UUID,
@@ -30,6 +32,7 @@ interface MessageInputProps {
 export function MessageInput({
   onSend,
   onEdit,
+  onPasteImage,
   onTyping,
   onAttach,
   disabled = false,
@@ -37,6 +40,7 @@ export function MessageInput({
   const [content, setContent] = useState("");
   const [attachments, setAttachments] = useState<UUID[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -45,6 +49,26 @@ export function MessageInput({
   const messages = useMessageStore((state) => state.messages);
   const setReplyTo = useMessageStore((state) => state.setReplyTo);
   const setEditingMessage = useMessageStore((state) => state.setEditingMessage);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void getCurrentWindow().onDragDropEvent(async (event) => {
+      if (event.payload.type === "enter" || event.payload.type === "over") {
+        setIsDragging(true);
+      } else if (event.payload.type === "leave") {
+        setIsDragging(false);
+      } else if (event.payload.type === "drop") {
+        setIsDragging(false);
+        if (event.payload.paths.length > 0) {
+          setIsUploading(true);
+          const ids = await onAttach(event.payload.paths);
+          setAttachments((current) => [...current, ...ids]);
+          setIsUploading(false);
+        }
+      }
+    }).then((dispose) => { unlisten = dispose; });
+    return () => { unlisten?.(); };
+  }, [onAttach]);
 
   useEffect(() => {
     if (!editingMessageId) return;
@@ -156,6 +180,16 @@ export function MessageInput({
     }
   }, [onAttach]);
 
+  const handlePaste = useCallback(async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const hasImage = [...event.clipboardData.items].some((item) => item.type.startsWith("image/"));
+    if (!hasImage) return;
+    event.preventDefault();
+    setIsUploading(true);
+    const id = await onPasteImage();
+    if (id) setAttachments((current) => [...current, id]);
+    setIsUploading(false);
+  }, [onPasteImage]);
+
   const cancelReply = useCallback(() => {
     setReplyTo(null);
   }, [setReplyTo]);
@@ -165,7 +199,8 @@ export function MessageInput({
   }, []);
 
   return (
-    <div className="composer-shell">
+    <div className={cn("composer-shell", isDragging && "ring-2 ring-inset ring-retro-green")}>
+      {isDragging ? <div className="absolute inset-0 z-20 grid place-items-center bg-retro-bg/90 font-pixel text-xs text-retro-green">DROP FILES TO ATTACH</div> : null}
       {/* Reply preview */}
       {replyToMessage ? (
         <div className="mb-3 flex items-center gap-2 border border-retro-border bg-retro-bg px-3 py-2">
@@ -232,6 +267,7 @@ export function MessageInput({
             disabled={disabled}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={editingMessageId ? "Edit your message..." : "Type a message..."}
             ref={textareaRef}
             rows={1}

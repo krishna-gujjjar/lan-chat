@@ -3,6 +3,7 @@
  */
 
 import { memo, useCallback } from "react";
+import { invokeOrThrow } from "@/shared/lib/tauri/invoke";
 import type { UUID } from "@/shared/types/common";
 import type {
   MessageWithDetails,
@@ -226,7 +227,7 @@ interface MessageContentProps {
 function MessageContent({ content, mentions }: MessageContentProps) {
   const mentionTokens = new Set(mentions.map((item) => `@${item.username}`));
   return (
-    <span className="whitespace-pre-wrap wrap-break-word">
+    <span className="whitespace-pre-wrap break-words">
       {content.split(/(@[\p{L}\p{N}_.-]+|\n)/gu).map((part, index) =>
         mentionTokens.has(part) ? (
           <span className="font-bold text-retro-cyan" key={`${part}-${index}`}>
@@ -248,12 +249,15 @@ function AttachmentList({ attachments }: AttachmentListProps) {
   return (
     <div className="inline-flex flex-wrap gap-2">
       {attachments.map((attachment) => (
-        <div
+        <button
           key={attachment.id}
-          className="retro-chip border-retro-border-light text-retro-text"
+          className="retro-chip border-retro-border-light text-retro-text hover:border-retro-green"
+          onClick={() => void invokeOrThrow("start_download", { attachmentId: attachment.id })}
+          title="Download from sender"
+          type="button"
         >
-          {attachment.isImage ? "🖼️" : "📎"} {attachment.originalFilename}
-        </div>
+          {attachment.isImage ? "🖼️" : "📎"} {attachment.originalFilename} · DOWNLOAD
+        </button>
       ))}
     </div>
   );

@@ -77,6 +77,7 @@ interface TauriCommands {
     input: { messageId?: UUID };
     output: Attachment;
   };
+  paste_clipboard_image: { input: undefined; output: Attachment };
   paste_text: { input: undefined; output: string | null };
   pause_download: { input: { downloadId: UUID }; output: Download };
   pick_download_folder: { input: undefined; output: string | null };

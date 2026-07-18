@@ -83,6 +83,7 @@ pub fn run() {
             commands::message::remove_reaction,
             // Attachment commands
             commands::attachment::upload_files,
+            commands::attachment::paste_clipboard_image,
             commands::attachment::start_download,
             commands::attachment::pause_download,
             commands::attachment::cancel_download,

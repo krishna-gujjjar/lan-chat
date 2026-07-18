@@ -28,7 +28,7 @@ pub async fn upload_files(
 
     for file_path in file_paths {
         let path = std::path::Path::new(&file_path);
-        
+
         // Get original filename
         let original_filename = path
             .file_name()
@@ -37,11 +37,8 @@ pub async fn upload_files(
             .to_string();
 
         // Sanitize and create stored filename
-        let extension = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
-        
+        let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+
         let stored_filename = if extension.is_empty() {
             Uuid::new_v4().to_string()
         } else {
@@ -52,9 +49,9 @@ pub async fn upload_files(
         let mime_type = mime_guess::from_path(path)
             .first_or_octet_stream()
             .to_string();
-        
+
         let is_image = mime_type.starts_with("image/");
-        
+
         let dest_dir = if is_image {
             state.uploads_dir().join("images")
         } else {
@@ -70,7 +67,7 @@ pub async fn upload_files(
         let mut file = fs::File::open(&dest_path).map_err(|e| e.to_string())?;
         let mut hasher = Sha256::new();
         let mut buffer = vec![0u8; 8192];
-        
+
         loop {
             let bytes_read = file.read(&mut buffer).map_err(|e| e.to_string())?;
             if bytes_read == 0 {
@@ -78,7 +75,7 @@ pub async fn upload_files(
             }
             hasher.update(&buffer[..bytes_read]);
         }
-        
+
         let checksum = hex::encode(hasher.finalize());
 
         // Get file metadata
@@ -111,7 +108,7 @@ pub async fn upload_files(
         // Insert into database
         sqlx::query(
             r#"
-            INSERT INTO attachments (id, message_id, original_filename, stored_filename, 
+            INSERT INTO attachments (id, message_id, original_filename, stored_filename,
                                      mime_type, size_bytes, checksum, is_image, width, height, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
@@ -144,7 +141,7 @@ pub async fn start_download(
     attachment_id: String,
 ) -> Result<Download, String> {
     let att_id = Uuid::parse_str(&attachment_id).map_err(|e| e.to_string())?;
-    
+
     let now = Utc::now();
     let download = Download {
         id: Uuid::new_v4(),
@@ -160,7 +157,7 @@ pub async fn start_download(
 
     sqlx::query(
         r#"
-        INSERT INTO downloads (id, attachment_id, status, progress_bytes, local_path, 
+        INSERT INTO downloads (id, attachment_id, status, progress_bytes, local_path,
                                started_at, completed_at, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
@@ -178,7 +175,21 @@ pub async fn start_download(
     .await
     .map_err(|e| e.to_string())?;
 
-    // TODO: Initiate actual download from peer
+    let requester_id = state
+        .current_user
+        .read()
+        .await
+        .as_ref()
+        .ok_or("No current user")?
+        .id;
+    crate::network::peer_connection::request_attachment(
+        state.inner().clone(),
+        download.id,
+        att_id,
+        requester_id,
+    )
+    .await
+    .map_err(|error| error.to_string())?;
 
     Ok(download)
 }
@@ -192,14 +203,12 @@ pub async fn pause_download(
     let id = Uuid::parse_str(&download_id).map_err(|e| e.to_string())?;
     let now = Utc::now();
 
-    sqlx::query(
-        "UPDATE downloads SET status = 'paused', updated_at = ? WHERE id = ?",
-    )
-    .bind(now.to_rfc3339())
-    .bind(id.to_string())
-    .execute(state.database.pool())
-    .await
-    .map_err(|e| e.to_string())?;
+    sqlx::query("UPDATE downloads SET status = 'paused', updated_at = ? WHERE id = ?")
+        .bind(now.to_rfc3339())
+        .bind(id.to_string())
+        .execute(state.database.pool())
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Return updated download (simplified)
     Ok(Download {
@@ -224,14 +233,12 @@ pub async fn cancel_download(
     let id = Uuid::parse_str(&download_id).map_err(|e| e.to_string())?;
     let now = Utc::now();
 
-    sqlx::query(
-        "UPDATE downloads SET status = 'cancelled', updated_at = ? WHERE id = ?",
-    )
-    .bind(now.to_rfc3339())
-    .bind(id.to_string())
-    .execute(state.database.pool())
-    .await
-    .map_err(|e| e.to_string())?;
+    sqlx::query("UPDATE downloads SET status = 'cancelled', updated_at = ? WHERE id = ?")
+        .bind(now.to_rfc3339())
+        .bind(id.to_string())
+        .execute(state.database.pool())
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -272,4 +279,54 @@ pub async fn get_download_progress(
         bytes_per_second: 0.0,
         estimated_time_remaining: None,
     })
+}
+/// Persist an image currently stored in the native clipboard as an attachment.
+#[tauri::command]
+pub async fn paste_clipboard_image(
+    app: tauri::AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Attachment, String> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let clipboard_image = app
+        .clipboard()
+        .read_image()
+        .map_err(|error| error.to_string())?;
+    let width = clipboard_image.width();
+    let height = clipboard_image.height();
+    let rgba = clipboard_image.rgba().to_vec();
+    let pixels = image::RgbaImage::from_raw(width, height, rgba)
+        .ok_or("Clipboard returned invalid image pixels")?;
+    let attachment_id = Uuid::new_v4();
+    let stored_filename = format!("{attachment_id}.png");
+    let destination = state.uploads_dir().join("images").join(&stored_filename);
+    tokio::task::spawn_blocking({
+        let destination = destination.clone();
+        move || pixels.save(destination)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())?;
+    let bytes = tokio::fs::read(&destination)
+        .await
+        .map_err(|error| error.to_string())?;
+    let attachment = Attachment {
+        id: attachment_id,
+        message_id: Uuid::new_v4(),
+        original_filename: format!("clipboard-{attachment_id}.png"),
+        stored_filename,
+        mime_type: "image/png".into(),
+        size_bytes: bytes.len() as i64,
+        checksum: hex::encode(Sha256::digest(&bytes)),
+        is_image: true,
+        width: Some(width as i32),
+        height: Some(height as i32),
+        created_at: Utc::now(),
+    };
+    sqlx::query("INSERT INTO attachments (id, message_id, original_filename, stored_filename, mime_type, size_bytes, checksum, is_image, width, height, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)")
+        .bind(attachment.id.to_string()).bind(attachment.message_id.to_string())
+        .bind(&attachment.original_filename).bind(&attachment.stored_filename)
+        .bind(&attachment.mime_type).bind(attachment.size_bytes).bind(&attachment.checksum)
+        .bind(attachment.width).bind(attachment.height).bind(attachment.created_at.to_rfc3339())
+        .execute(state.database.pool()).await.map_err(|error| error.to_string())?;
+    Ok(attachment)
 }

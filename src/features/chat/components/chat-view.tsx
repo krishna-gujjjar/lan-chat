@@ -91,6 +91,16 @@ export function ChatView() {
     [currentUser]
   );
 
+  const handlePasteImage = useCallback(async () => {
+    try {
+      const attachment = await invokeOrThrow("paste_clipboard_image");
+      return attachment.id;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Clipboard image could not be read");
+      return null;
+    }
+  }, [setError]);
+
   const handleLoadMore = useCallback(async () => {
     if (!hasMore || isLoadingMore || messages.length === 0) return;
     setLoadingMore(true);
@@ -184,6 +194,7 @@ export function ChatView() {
       <MessageInput
         onAttach={handleAttach}
         onEdit={handleSaveEdit}
+        onPasteImage={handlePasteImage}
         onSend={handleSend}
         onTyping={handleTyping}
       />
