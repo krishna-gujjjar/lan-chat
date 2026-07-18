@@ -163,12 +163,31 @@ async fn handle_peer_stream(
     }
 
     if let Some(user_id) = registered_user {
-        state.peer_writers.write().await.remove(&user_id);
-        let _ = sqlx::query("UPDATE peers SET is_connected = 0, updated_at = ? WHERE user_id = ?")
-            .bind(chrono::Utc::now().to_rfc3339())
-            .bind(user_id.to_string())
-            .execute(state.database.pool())
-            .await;
+        // A reconnect can replace this writer before the old reader notices its
+        // socket has closed. Only remove/mark offline when this task still owns
+        // the currently registered generation.
+        let removed_current = {
+            let mut writers = state.peer_writers.write().await;
+            let is_current = writers
+                .get(&user_id)
+                .map(|current| Arc::ptr_eq(current, &writer))
+                .unwrap_or(false);
+            if is_current {
+                writers.remove(&user_id);
+            }
+            is_current
+        };
+        if removed_current {
+            let _ =
+                sqlx::query("UPDATE peers SET is_connected = 0, updated_at = ? WHERE user_id = ?")
+                    .bind(chrono::Utc::now().to_rfc3339())
+                    .bind(user_id.to_string())
+                    .execute(state.database.pool())
+                    .await;
+            tracing::info!(%user_id, "active peer stream disconnected");
+        } else {
+            tracing::debug!(%user_id, "superseded peer stream closed; active reconnect retained");
+        }
     }
     Ok(())
 }
@@ -432,7 +451,7 @@ pub async fn broadcast_message(
                 tracing::info!(peer = %addr, message_id = %message.message.id, "message delivered over persistent peer stream");
                 continue;
             }
-            state.peer_writers.write().await.remove(&user_id);
+            remove_writer_if_current(&state, user_id, &writer).await;
             tracing::warn!(peer = %addr, "persistent stream failed; trying direct connection");
         }
 
@@ -587,7 +606,7 @@ async fn broadcast_control_packet(
             if matches!(result, Ok(Ok(()))) {
                 continue;
             }
-            state.peer_writers.write().await.remove(&user_id);
+            remove_writer_if_current(&state, user_id, &writer).await;
         }
         let target = format!("{address}:{port}");
         if let Ok(Ok(mut stream)) = timeout(CONNECT_TIMEOUT, TcpStream::connect(&target)).await {
@@ -608,4 +627,19 @@ async fn send_raw(
     .await
     .map_err(|_| "network write timed out")??;
     Ok(())
+}
+
+async fn remove_writer_if_current(
+    state: &Arc<AppState>,
+    user_id: Uuid,
+    writer: &Arc<tokio::sync::Mutex<tokio::net::tcp::OwnedWriteHalf>>,
+) {
+    let mut writers = state.peer_writers.write().await;
+    let is_current = writers
+        .get(&user_id)
+        .map(|current| Arc::ptr_eq(current, writer))
+        .unwrap_or(false);
+    if is_current {
+        writers.remove(&user_id);
+    }
 }
