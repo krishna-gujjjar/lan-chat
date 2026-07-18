@@ -17,6 +17,7 @@ export function ChatView() {
   const setError = useMessageStore((state) => state.setError);
   const setEditingMessage = useMessageStore((state) => state.setEditingMessage);
   const addMessage = useMessageStore((state) => state.addMessage);
+  const updateMessage = useMessageStore((state) => state.updateMessage);
   const prependMessages = useMessageStore((state) => state.prependMessages);
   const removeMessage = useMessageStore((state) => state.removeMessage);
   const addReaction = useMessageStore((state) => state.addReaction);
@@ -121,6 +122,15 @@ export function ChatView() {
     [setEditingMessage]
   );
 
+  const handleSaveEdit = useCallback(async (messageId: UUID, content: string) => {
+    try {
+      const message = await invokeOrThrow("edit_message", { messageId, content });
+      updateMessage(messageId, message);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Message could not be edited");
+    }
+  }, [setError, updateMessage]);
+
   const handleDelete = useCallback(
     async (messageId: UUID) => {
       try {
@@ -173,6 +183,7 @@ export function ChatView() {
       />
       <MessageInput
         onAttach={handleAttach}
+        onEdit={handleSaveEdit}
         onSend={handleSend}
         onTyping={handleTyping}
       />

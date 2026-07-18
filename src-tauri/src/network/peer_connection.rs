@@ -203,6 +203,19 @@ async fn handle_network_packet(
                 .execute(state.database.pool())
                 .await?;
 
+                    if result.rows_affected() == 1 {
+                        for attachment in &msg.attachments {
+                            sqlx::query("INSERT OR IGNORE INTO attachments (id, message_id, original_filename, stored_filename, mime_type, size_bytes, checksum, is_image, width, height, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                            .bind(attachment.id.to_string()).bind(msg.message.id.to_string())
+                            .bind(&attachment.original_filename).bind(&attachment.stored_filename)
+                            .bind(&attachment.mime_type).bind(attachment.size_bytes)
+                            .bind(&attachment.checksum).bind(attachment.is_image)
+                            .bind(attachment.width).bind(attachment.height)
+                            .bind(attachment.created_at.to_rfc3339())
+                            .execute(state.database.pool()).await?;
+                        }
+                    }
+
                     // Emit only once. UDP discovery and reconnects may legitimately cause
                     // the same packet to be delivered more than once.
                     if result.rows_affected() == 1 {
@@ -233,6 +246,44 @@ async fn handle_network_packet(
                         let _ = app_handle.emit("typing:stopped", indicator);
                     }
                 }
+            }
+        }
+        NetworkMessageType::MessageEdit => {
+            let message = serde_json::from_value::<MessageWithDetails>(packet.payload)?;
+            sqlx::query("UPDATE messages SET content = ?, is_edited = 1, updated_at = ? WHERE id = ? AND sender_id = ?")
+                .bind(&message.message.content)
+                .bind(message.message.updated_at.to_rfc3339())
+                .bind(message.message.id.to_string())
+                .bind(packet.sender_id)
+                .execute(state.database.pool()).await?;
+            if let Some(app_handle) = state.app_handle.read().await.as_ref() {
+                let _ = app_handle.emit("message:updated", message);
+            }
+        }
+        NetworkMessageType::MessageDelete => {
+            let message_id = packet
+                .payload
+                .get("messageId")
+                .and_then(|value| value.as_str())
+                .ok_or("delete packet missing messageId")?;
+            sqlx::query("UPDATE messages SET content = NULL, is_deleted = 1, updated_at = ? WHERE id = ? AND sender_id = ?")
+                .bind(chrono::Utc::now().to_rfc3339()).bind(message_id).bind(packet.sender_id)
+                .execute(state.database.pool()).await?;
+            if let Some(app_handle) = state.app_handle.read().await.as_ref() {
+                let _ = app_handle.emit(
+                    "message:deleted",
+                    serde_json::json!({"messageId": message_id}),
+                );
+            }
+        }
+        NetworkMessageType::Reaction => {
+            let reaction = serde_json::from_value::<crate::models::Reaction>(packet.payload)?;
+            sqlx::query("INSERT OR IGNORE INTO reactions (id, message_id, user_id, emoji, created_at) VALUES (?, ?, ?, ?, ?)")
+                .bind(reaction.id.to_string()).bind(reaction.message_id.to_string())
+                .bind(reaction.user_id.to_string()).bind(&reaction.emoji)
+                .bind(reaction.created_at.to_rfc3339()).execute(state.database.pool()).await?;
+            if let Some(app_handle) = state.app_handle.read().await.as_ref() {
+                let _ = app_handle.emit("reaction:added", reaction);
             }
         }
         _ => {}
@@ -448,5 +499,113 @@ pub async fn broadcast_typing(
         }
     }
 
+    Ok(())
+}
+/// Broadcast an edited message to every peer.
+pub async fn broadcast_message_edit(
+    state: Arc<AppState>,
+    message: &MessageWithDetails,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    broadcast_control_packet(
+        state,
+        NetworkMessageType::MessageEdit,
+        message.message.sender_id,
+        serde_json::to_value(message)?,
+    )
+    .await
+}
+
+/// Broadcast a message tombstone.
+pub async fn broadcast_message_delete(
+    state: Arc<AppState>,
+    message_id: Uuid,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let sender_id = state
+        .current_user
+        .read()
+        .await
+        .as_ref()
+        .map(|user| user.id)
+        .ok_or("No current user")?;
+    broadcast_control_packet(
+        state,
+        NetworkMessageType::MessageDelete,
+        sender_id,
+        serde_json::json!({ "messageId": message_id }),
+    )
+    .await
+}
+
+/// Broadcast a reaction using its stable UUID for idempotency.
+pub async fn broadcast_reaction(
+    state: Arc<AppState>,
+    reaction: &crate::models::Reaction,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    broadcast_control_packet(
+        state,
+        NetworkMessageType::Reaction,
+        reaction.user_id,
+        serde_json::to_value(reaction)?,
+    )
+    .await
+}
+
+async fn broadcast_control_packet(
+    state: Arc<AppState>,
+    packet_type: NetworkMessageType,
+    sender_id: Uuid,
+    payload: serde_json::Value,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let packet = NetworkPacket {
+        packet_type,
+        sender_id: sender_id.to_string(),
+        payload,
+        timestamp: chrono::Utc::now().to_rfc3339(),
+    };
+    let json = serde_json::to_vec(&packet)?;
+    if json.len() > MAX_PACKET_BYTES {
+        return Err("network packet too large".into());
+    }
+    let mut data = Vec::with_capacity(json.len() + 4);
+    data.extend_from_slice(&(json.len() as u32).to_be_bytes());
+    data.extend_from_slice(&json);
+    let rows = sqlx::query("SELECT user_id, address, port FROM peers")
+        .fetch_all(state.database.pool())
+        .await?;
+    for row in rows {
+        let user_id = Uuid::parse_str(&row.try_get::<String, _>("user_id")?)?;
+        let address: String = row.try_get("address")?;
+        let port: i32 = row.try_get("port")?;
+        let writer = state.peer_writers.read().await.get(&user_id).cloned();
+        if let Some(writer) = writer {
+            let result = timeout(WRITE_TIMEOUT, async {
+                let mut stream = writer.lock().await;
+                stream.write_all(&data).await?;
+                stream.flush().await
+            })
+            .await;
+            if matches!(result, Ok(Ok(()))) {
+                continue;
+            }
+            state.peer_writers.write().await.remove(&user_id);
+        }
+        let target = format!("{address}:{port}");
+        if let Ok(Ok(mut stream)) = timeout(CONNECT_TIMEOUT, TcpStream::connect(&target)).await {
+            send_raw(&mut stream, &data).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn send_raw(
+    stream: &mut TcpStream,
+    data: &[u8],
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    timeout(WRITE_TIMEOUT, async {
+        stream.write_all(data).await?;
+        stream.flush().await
+    })
+    .await
+    .map_err(|_| "network write timed out")??;
     Ok(())
 }

@@ -6,6 +6,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import {
   type KeyboardEvent,
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -17,6 +18,7 @@ import { cn } from "@/utils/cn";
 interface MessageInputProps {
   readonly disabled?: boolean;
   readonly onAttach: (filePaths: string[]) => Promise<UUID[]>;
+  readonly onEdit: (messageId: UUID, content: string) => void;
   readonly onSend: (
     content: string,
     replyToId?: UUID,
@@ -27,6 +29,7 @@ interface MessageInputProps {
 
 export function MessageInput({
   onSend,
+  onEdit,
   onTyping,
   onAttach,
   disabled = false,
@@ -38,8 +41,17 @@ export function MessageInput({
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const replyToId = useMessageStore((state) => state.replyToId);
+  const editingMessageId = useMessageStore((state) => state.editingMessageId);
   const messages = useMessageStore((state) => state.messages);
   const setReplyTo = useMessageStore((state) => state.setReplyTo);
+  const setEditingMessage = useMessageStore((state) => state.setEditingMessage);
+
+  useEffect(() => {
+    if (!editingMessageId) return;
+    const message = messages.find((item) => item.id === editingMessageId);
+    setContent(message?.content ?? "");
+    textareaRef.current?.focus();
+  }, [editingMessageId, messages]);
 
   const replyToMessage = useMemo(() => {
     if (!replyToId) {
@@ -75,11 +87,16 @@ export function MessageInput({
       return;
     }
 
-    onSend(
-      trimmed,
-      replyToMessage?.id,
-      attachments.length > 0 ? attachments : undefined
-    );
+    if (editingMessageId) {
+      onEdit(editingMessageId, trimmed);
+      setEditingMessage(null);
+    } else {
+      onSend(
+        trimmed,
+        replyToMessage?.id,
+        attachments.length > 0 ? attachments : undefined
+      );
+    }
     setContent("");
     setAttachments([]);
     setReplyTo(null);
@@ -93,9 +110,12 @@ export function MessageInput({
     content,
     attachments,
     disabled,
+    editingMessageId,
+    onEdit,
     onSend,
     onTyping,
     replyToMessage,
+    setEditingMessage,
     setReplyTo,
   ]);
 
@@ -212,7 +232,7 @@ export function MessageInput({
             disabled={disabled}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            placeholder="Type a message..."
+            placeholder={editingMessageId ? "Edit your message..." : "Type a message..."}
             ref={textareaRef}
             rows={1}
             style={{
@@ -228,7 +248,7 @@ export function MessageInput({
           disabled={disabled || (!content.trim() && attachments.length === 0)}
           onClick={handleSend}
         >
-          SEND
+          {editingMessageId ? "SAVE" : "SEND"}
         </button>
       </div>
 

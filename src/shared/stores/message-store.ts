@@ -120,7 +120,7 @@ export const useMessageStore = create<MessageStore>()(
         set(
           (state) => ({
             messages: state.messages.map((msg) =>
-              msg.id === messageId
+              msg.id === messageId && !msg.reactions.some((item) => item.id === reaction.id)
                 ? { ...msg, reactions: [...msg.reactions, reaction] }
                 : msg
             ),

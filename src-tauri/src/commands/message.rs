@@ -59,23 +59,24 @@ pub async fn edit_message(
     let id = Uuid::parse_str(&message_id).map_err(|e| e.to_string())?;
 
     let service = MessageService::new(state.database.clone());
+    ensure_message_owner(&state, id).await?;
 
     let message = service
         .update_message(id, content)
         .await
         .map_err(|e| e.to_string())?;
 
-    // Get full message details
-    let messages = service
-        .get_messages(100, None)
+    let msg_with_details = service
+        .get_message_details(message)
         .await
         .map_err(|e| e.to_string())?;
 
-    let msg_with_details = messages
-        .items
-        .into_iter()
-        .find(|m| m.message.id == message.id)
-        .ok_or_else(|| "Failed to retrieve updated message".to_string())?;
+    crate::network::peer_connection::broadcast_message_edit(
+        state.inner().clone(),
+        &msg_with_details,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     // Emit to frontend
     if let Some(app_handle) = state.app_handle.read().await.as_ref() {
@@ -94,9 +95,13 @@ pub async fn delete_message(
     let id = Uuid::parse_str(&message_id).map_err(|e| e.to_string())?;
 
     let service = MessageService::new(state.database.clone());
+    ensure_message_owner(&state, id).await?;
 
     service
         .delete_message(id)
+        .await
+        .map_err(|e| e.to_string())?;
+    crate::network::peer_connection::broadcast_message_delete(state.inner().clone(), id)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -160,7 +165,7 @@ pub async fn add_reaction(
     let reaction = Reaction::new(msg_id, user.id, user.username.clone(), emoji);
 
     // Insert into database
-    sqlx::query(
+    let insert_result = sqlx::query(
         r#"
         INSERT INTO reactions (id, message_id, user_id, emoji, created_at)
         VALUES (?, ?, ?, ?, ?)
@@ -175,6 +180,14 @@ pub async fn add_reaction(
     .execute(state.database.pool())
     .await
     .map_err(|e| e.to_string())?;
+
+    if insert_result.rows_affected() == 0 {
+        return Err("You already added this reaction".into());
+    }
+
+    crate::network::peer_connection::broadcast_reaction(state.inner().clone(), &reaction)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Emit to frontend
     if let Some(app_handle) = state.app_handle.read().await.as_ref() {
@@ -207,4 +220,27 @@ pub async fn remove_reaction(
     }
 
     Ok(())
+}
+async fn ensure_message_owner(
+    state: &State<'_, Arc<AppState>>,
+    message_id: Uuid,
+) -> Result<(), String> {
+    let user_id = state
+        .current_user
+        .read()
+        .await
+        .as_ref()
+        .ok_or("No current user")?
+        .id
+        .to_string();
+    let owner: Option<String> = sqlx::query_scalar("SELECT sender_id FROM messages WHERE id = ?")
+        .bind(message_id.to_string())
+        .fetch_optional(state.database.pool())
+        .await
+        .map_err(|error| error.to_string())?;
+    match owner {
+        Some(owner_id) if owner_id == user_id => Ok(()),
+        Some(_) => Err("You can only modify your own messages".into()),
+        None => Err("Message not found".into()),
+    }
 }
